@@ -191,19 +191,19 @@
         <p class="join-hint">将从账户筹码中扣除买入额；离开牌桌后剩余筹码退回账户。</p>
         <div class="form-group">
           <label>房间名</label>
-          <input type="text" id="host-roomname" placeholder="例如：周五局" maxlength="20">
+          <input type="text" id="host-roomname" placeholder="玩家名的牌局" maxlength="20">
         </div>
         <div class="form-group">
           <label>房间密码 <small>（可选）</small></label>
           <input type="text" id="host-password" placeholder="留空则大厅可见可进" autocomplete="off">
         </div>
         <div class="form-row">
-          <div class="form-group"><label>小盲</label><input type="number" id="host-sb" value="10" min="1"></div>
-          <div class="form-group"><label>大盲</label><input type="number" id="host-bb" value="20" min="1"></div>
+          <div class="form-group"><label>小盲</label><input type="number" id="host-sb" value="1" min="1"></div>
+          <div class="form-group"><label>大盲</label><input type="number" id="host-bb" value="2" min="1"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>人数上限</label><input type="number" id="host-max" value="6" min="2" max="12"></div>
-          <div class="form-group"><label>买入</label><input type="number" id="host-chips" value="1000" min="100"></div>
+          <div class="form-group"><label>人数上限</label><input type="number" id="host-max" value="9" min="2" max="12"></div>
+          <div class="form-group"><label>买入 <small>（默认 100BB）</small></label><input type="number" id="host-chips" value="200" min="1"></div>
         </div>
         <div class="form-group">
           <label>牌局时长：<strong id="host-session-label">1 小时</strong></label>

@@ -122,7 +122,18 @@ const App = {
 
   showHost() {
     this.stopLobbyPolling();
+    const nick = (this.user?.nickname || '').trim() || '玩家';
+    const roomNameEl = document.getElementById('host-roomname');
+    if (roomNameEl) roomNameEl.value = `${nick}的牌局`.slice(0, 20);
+    this.syncHostBuyInFromBb();
     this.showOnly('screen-host');
+  },
+
+  /** 买入默认 = 100 × 大盲 */
+  syncHostBuyInFromBb() {
+    const bb = Math.max(1, parseInt(document.getElementById('host-bb')?.value, 10) || 2);
+    const chipsEl = document.getElementById('host-chips');
+    if (chipsEl) chipsEl.value = String(bb * 100);
   },
 
   showGame() {
@@ -208,6 +219,7 @@ const App = {
     document.getElementById('btn-refresh-lobby')?.addEventListener('click', () => this.refreshLobby());
     document.getElementById('btn-goto-create')?.addEventListener('click', () => this.showHost());
     document.getElementById('btn-games-create')?.addEventListener('click', () => this.showHost());
+    document.getElementById('host-bb')?.addEventListener('input', () => this.syncHostBuyInFromBb());
     document.getElementById('btn-settle-lobby')?.addEventListener('click', () => this.leaveGame());
     document.getElementById('btn-logout')?.addEventListener('click', () => {
       API.clearSession();

@@ -11,6 +11,10 @@
   --btn-secondary: #2ecc71;
   --btn-tertiary: #9b59b6;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* 手机牌桌 chrome：固定值，不随操作栏显隐变化 */
+  --game-top-h: 48px;
+  --game-hero-h: 168px;
+  --game-action-h: calc(200px + var(--safe-bottom));
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -601,11 +605,17 @@ input[type="checkbox"] { width: auto; }
   position: absolute;
   top: 2px;
   left: 54%;
+  right: auto;
   transform: translateX(0);
   display: flex;
   gap: 2px;
   z-index: 6;
   pointer-events: none;
+}
+/* 桌面右侧座位：手牌在头像左侧，避免贴出屏幕 */
+.seat.cards-left .seat-cards {
+  left: auto;
+  right: 54%;
 }
 /* 自己座位平时用手牌区展示；摊牌时桌位上也亮出 */
 .seat.me .seat-cards { display: none; }
@@ -619,12 +629,17 @@ input[type="checkbox"] { width: auto; }
 }
 .seat-cards .card .card-rank { font-size: 8px; }
 .seat-cards .card .card-suit { font-size: 10px; }
-/* 摊牌秀牌：放在头像右侧，不被 D / 位置标签挡住 */
+/* 摊牌秀牌：默认头像右侧；右侧座位仍在左侧 */
 .seat-cards.revealed {
   top: 0;
   left: 58%;
+  right: auto;
   z-index: 7;
   gap: 3px;
+}
+.seat.cards-left .seat-cards.revealed {
+  left: auto;
+  right: 58%;
 }
 .seat-cards.revealed .card {
   width: 30px;
@@ -710,11 +725,16 @@ input[type="checkbox"] { width: auto; }
   pointer-events: none;
   box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
-/* 摊牌时位置标签贴在头像上方，与右侧手牌错开 */
+/* 摊牌时位置标签贴在头像上方，与手牌错开 */
 .seat.showdown-reveal .seat-position {
   top: -18px;
   left: 0;
+  right: auto;
   transform: none;
+}
+.seat.cards-left.showdown-reveal .seat-position {
+  left: auto;
+  right: 0;
 }
 .seat-position.pos-sb {
   background: rgba(74, 144, 226, 0.9);
@@ -883,12 +903,13 @@ input[type="checkbox"] { width: auto; }
   color: #ffe08a;
 }
 
-/* Action bar — big thumb buttons */
+/* Action bar — 高度由手机端固定，内容显隐用 visibility 不改占位 */
 #action-bar {
   width: 100%;
   padding: 8px 12px calc(10px + var(--safe-bottom));
   background: linear-gradient(180deg, rgba(8,12,10,0.2), rgba(8,12,10,0.92));
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 .turn-indicator {
   text-align: center;
@@ -897,6 +918,7 @@ input[type="checkbox"] { width: auto; }
   font-size: 0.9rem;
   padding: 2px 0 6px;
   letter-spacing: 0.04em;
+  min-height: 1.6em;
 }
 .turn-indicator.hidden { display: none; }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
@@ -966,7 +988,10 @@ input[type="checkbox"] { width: auto; }
 .act-raise { background: linear-gradient(180deg, #5aa8ff, #2f6fd6); }
 .act-allin { background: linear-gradient(180deg, #ff9a4d, #d35400); }
 .act-btn.hidden-btn { display: none !important; }
-.waiting-actions { display: none; margin-top: 2px; }
+.waiting-actions {
+  display: none;
+  margin-top: 2px;
+}
 .waiting-actions.show { display: block; }
 .waiting-actions .act-btn { width: 100%; }
 
@@ -1326,22 +1351,99 @@ input[type="checkbox"] { width: auto; }
 
   #host-display { display: none; }
 
-  /* 竖屏：竖向跑道桌（上下短边为圆弧） */
+  /* 竖屏：牌桌只跟视口宽度走，chrome 高度写死，操作栏显隐不再改桌面大小 */
+  #table-container {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #top-bar {
+    min-height: var(--game-top-h);
+  }
   #table-stage {
-    padding: 2px 2px 0;
-    align-items: stretch;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 16px 6px 8px;
+    align-items: center;
     justify-content: center;
+    overflow: hidden;
   }
   #poker-table {
-    width: auto;
-    height: 100%;
-    max-height: 100%;
-    max-width: min(94vw, 440px);
-    aspect-ratio: 0.68 / 1;
+    /* 不用 cqh/剩余高度；仅用 vw + 固定 chrome 上限 */
+    --table-w: min(
+      86vw,
+      360px,
+      calc((100dvh - var(--game-top-h) - var(--game-hero-h) - var(--game-action-h) - 20px) * 0.68)
+    );
+    width: var(--table-w);
+    height: calc(var(--table-w) / 0.68);
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
     border-width: 7px;
     border-radius: 9999px;
+    flex-shrink: 0;
   }
   .felt-inner { border-radius: 9999px; }
+
+  #hero-zone {
+    height: var(--game-hero-h);
+    min-height: var(--game-hero-h);
+    max-height: var(--game-hero-h);
+    justify-content: flex-start;
+    box-sizing: border-box;
+    overflow: visible;
+    padding-top: 8px;
+    gap: 4px;
+  }
+  #hero-cards {
+    min-height: 82px;
+    flex-shrink: 0;
+  }
+  #hero-cards:empty {
+    display: flex;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  /* 自己座位头像不要压到手牌上 */
+  .seat.me {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  #action-bar {
+    height: var(--game-action-h);
+    min-height: var(--game-action-h);
+    max-height: var(--game-action-h);
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+  /* 手机：操作区内容显隐不改高度（固定栏内占位） */
+  #action-bar .turn-indicator.hidden {
+    display: block;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #action-bar .bet-presets {
+    display: grid;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #action-bar .bet-presets.show {
+    visibility: visible;
+    pointer-events: auto;
+  }
+  #action-bar .raise-slider-row {
+    display: grid;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  #action-bar .raise-slider-row.show {
+    visibility: visible;
+    pointer-events: auto;
+  }
 
   .seat { width: 74px; }
   .seat-avatar-wrap, .seat-avatar { width: 48px; height: 48px; }
@@ -1376,9 +1478,14 @@ input[type="checkbox"] { width: auto; }
 
 @media (max-width: 380px) {
   #poker-table {
-    aspect-ratio: 0.64 / 1;
+    --table-w: min(
+      90vw,
+      320px,
+      calc((100dvh - var(--game-top-h) - var(--game-hero-h) - var(--game-action-h) - 20px) * 0.64)
+    );
+    width: var(--table-w);
+    height: calc(var(--table-w) / 0.64);
     border-width: 6px;
-    max-width: 96vw;
     border-radius: 9999px;
   }
   .seat { width: 66px; }

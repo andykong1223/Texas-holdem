@@ -213,13 +213,15 @@ function createRoom() {
   if (maxPlayersRaw > 12) return alert('最多 12 人');
   if (!socket.connected) return alert('未连接，请先登录');
 
+  const bigBlind = Math.max(1, parseInt(document.getElementById('host-bb').value) || 2);
+  const startingChips = parseInt(document.getElementById('host-chips').value) || bigBlind * 100;
   socket.emit('create-room', {
     roomName: document.getElementById('host-roomname').value.trim(),
     password: document.getElementById('host-password').value,
     smallBlind: parseInt(document.getElementById('host-sb').value),
-    bigBlind: parseInt(document.getElementById('host-bb').value),
+    bigBlind,
     maxPlayers: maxPlayersRaw,
-    startingChips: parseInt(document.getElementById('host-chips').value),
+    startingChips,
     rebuysAllowed: document.getElementById('host-rebuys').checked,
     rebuyNeedsApproval: document.getElementById('host-rebuy-approval').checked,
     timerEnabled: document.getElementById('host-timer').checked,
@@ -1106,7 +1108,7 @@ function cardsSignature(cards) {
 }
 
 /**
- * 跑道形桌边座席：长边直线 + 短边半圆。
+ * 跑道形桌边座席：沿桌边等弧长均匀分布。
  * t∈[0,1)，0 在底边中点，逆时针（屏幕坐标下先往左）。
  * 返回 {x,y, nx,ny}，n 为指向桌外的大致法向（用于注码偏移）。
  */
@@ -1193,8 +1195,8 @@ function stadiumSeatPoint(t, w, h, padRatio = 0.07) {
     return { x: rightX, y: top + d, nx: 1, ny: 0 };
   }
   d -= straight;
-  // 底弧右 → 中
-  const ang = 0 - (Math.min(d, quarter) / quarter) * (Math.PI / 2);
+  // 底弧右 → 中（从 ang=0 到 π/2，与左侧底弧对称）
+  const ang = 0 + (Math.min(d, quarter) / quarter) * (Math.PI / 2);
   return { x: cx + r * Math.cos(ang), y: bottom + r * Math.sin(ang), nx: Math.cos(ang), ny: Math.sin(ang) };
 }
 
@@ -1248,7 +1250,7 @@ function renderTable() {
   const anchorSeat = (meForSeat?.seatIndex ?? 0);
   const seatHalfW = isMobileLayout ? 34 : 43;
   const seatHalfH = isMobileLayout ? 46 : 54;
-  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:stad`;
+  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:stad-even`;
   const layoutChanged = seatsContainer.dataset.layoutKey !== layoutKey;
   if (layoutChanged) {
     seatsContainer.dataset.layoutKey = layoutKey;
@@ -1256,9 +1258,10 @@ function renderTable() {
   }
 
   for (let seatIdx = 0; seatIdx < maxPlayers; seatIdx++) {
-    // 相对自己座位旋转，自己始终在底边
-    const t = ((seatIdx - anchorSeat) / maxPlayers + 1) % 1;
-    const pt = stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.06 : 0.08);
+    // 相对自己旋转：自己在底边中点，其余沿桌边等弧长均匀分布
+    const relIndex = ((seatIdx - anchorSeat) % maxPlayers + maxPlayers) % maxPlayers;
+    const t = relIndex / maxPlayers;
+    const pt = stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.12 : 0.09);
     const x = pt.x;
     const y = pt.y;
     // 注额往桌心偏一点（沿法向反方向）
@@ -1275,6 +1278,8 @@ function renderTable() {
     // 自己的座位略往桌心收，避免名字/头像压到底部手牌上
     const isMeSeat = p && p.id === mySocketId;
     const nudgeY = isMeSeat ? -Math.round(seatHalfH * 0.35) : 0;
+    // 右侧座位手牌放头像左侧，避免贴出屏幕
+    const cardsOnLeft = x >= tableWidth * 0.5;
     seat.style.left = (x - seatHalfW) + 'px';
     seat.style.top = (y - seatHalfH + nudgeY) + 'px';
 
@@ -1290,6 +1295,7 @@ function renderTable() {
           <div class="seat-info"><div class="seat-name">空位</div><div class="seat-chips">&nbsp;</div></div>
         `;
       }
+      seat.classList.toggle('cards-left', cardsOnLeft);
       continue;
     }
 
@@ -1306,9 +1312,13 @@ function renderTable() {
     const renderKey = [
       p.id, p.chips, p.currentBet, p.folded, p.allIn, p.disconnected, p.isSittingOut,
       isActive, cardsRevealed, cardsSignature(p.holeCards), pos?.code || '',
-      currentRoom.gameState.dealerIndex === p.seatIndex ? 'D' : ''
+      currentRoom.gameState.dealerIndex === p.seatIndex ? 'D' : '',
+      cardsOnLeft ? 'L' : 'R'
     ].join(':');
-    if (seat.dataset.renderKey === renderKey) continue;
+    if (seat.dataset.renderKey === renderKey) {
+      seat.classList.toggle('cards-left', cardsOnLeft && !isMeSeat);
+      continue;
+    }
     seat.dataset.renderKey = renderKey;
 
     seat.className = 'seat';
@@ -1317,6 +1327,7 @@ function renderTable() {
     if (isActive) seat.classList.add('active');
     if (p.folded || p.isSittingOut || p.disconnected) seat.classList.add('folded');
     if (cardsRevealed) seat.classList.add('showdown-reveal');
+    if (cardsOnLeft && !isMeSeat) seat.classList.add('cards-left');
     // 自己手牌只在底部 hero 区展示，座位上不再重复亮牌（避免挡住）
 
     let cardsHtml = `<div class="seat-cards${cardsRevealed ? ' revealed' : ''}">`;
@@ -1413,6 +1424,7 @@ function renderTable() {
   const actionStatus = document.getElementById('action-status');
   const betPresets = document.getElementById('bet-presets');
   const raiseRow = document.getElementById('raise-slider-row');
+  const actionBar = document.getElementById('action-bar');
   const isMyTurn = currentRoom.gameState.currentPlayerIndex === me?.seatIndex
     && !me?.folded
     && !me?.allIn
@@ -1427,6 +1439,9 @@ function renderTable() {
   const actionsRow = document.getElementById('actions-row');
   const waitingActions = document.getElementById('waiting-actions');
   const isWaitingLobby = currentRoom.gameState.status === 'waiting';
+
+  // 开局后固定行动区高度，避免轮到你时牌桌忽大忽小
+  if (actionBar) actionBar.classList.toggle('in-hand', !isWaitingLobby);
 
   if (waitingActions) waitingActions.classList.toggle('show', isWaitingLobby);
   if (actionsRow) actionsRow.style.display = isWaitingLobby ? 'none' : 'grid';

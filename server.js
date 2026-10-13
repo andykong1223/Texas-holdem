@@ -1615,11 +1615,14 @@ io.on('connection', (socket) => {
         && sessionMinutesRaw % 30 === 0) {
       sessionMinutes = sessionMinutesRaw;
     }
+    const bigBlind = Math.max(1, parseInt(data.bigBlind) || 2);
+    const smallBlind = Math.max(1, parseInt(data.smallBlind) || 1);
+    const defaultBuyIn = bigBlind * 100; // 新玩家默认 100 个大盲
     const settings = {
-      smallBlind: Math.max(1, parseInt(data.smallBlind) || 10),
-      bigBlind: Math.max(1, parseInt(data.bigBlind) || 20),
-      maxPlayers: Math.max(2, Math.min(12, parseInt(data.maxPlayers) || 8)),
-      startingChips: Math.max(100, parseInt(data.startingChips) || 1000),
+      smallBlind,
+      bigBlind,
+      maxPlayers: Math.max(2, Math.min(12, parseInt(data.maxPlayers) || 9)),
+      startingChips: Math.max(bigBlind, parseInt(data.startingChips) || defaultBuyIn),
       timerSeconds: Math.max(5, Math.min(120, parseInt(data.timerSeconds) || 20)),
       timerEnabled: data.timerEnabled !== undefined ? data.timerEnabled : true,
       rebuysAllowed: data.rebuysAllowed !== undefined ? data.rebuysAllowed : true,
@@ -1630,16 +1633,17 @@ io.on('connection', (socket) => {
       return socket.emit('error-msg', `筹码不足，需要买入 ${settings.startingChips}（当前 ${fresh.chips}）`);
     }
     db.adjustChips(fresh.id, -settings.startingChips);
+    const defaultRoomName = `${nickname}的牌局`;
     const sessionId = db.createSession({
       roomCode: roomId,
-      roomName: (data.roomName || `${nickname}的牌桌`).slice(0, 20),
+      roomName: (data.roomName || defaultRoomName).slice(0, 20),
       hostUserId: fresh.id,
       smallBlind: settings.smallBlind,
       bigBlind: settings.bigBlind,
       buyIn: settings.startingChips,
       passwordProtected: !!data.password
     });
-    const room = new Room(roomId, socket.id, data.roomName || `${nickname}的牌桌`, data.password || '', settings, {
+    const room = new Room(roomId, socket.id, data.roomName || defaultRoomName, data.password || '', settings, {
       sessionId,
       hostUserId: fresh.id
     });
