@@ -1,0 +1,33 @@
+services:
+  holdem:
+    build:
+      context: .
+      args:
+        # 海外服务器可改为: node:22-alpine
+        NODE_IMAGE: ${NODE_IMAGE:-m.daocloud.io/docker.io/library/node:22-alpine}
+    image: ${IMAGE_NAME:-texas-holdem-h5:latest}
+    container_name: texas-holdem
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?请在 .env 中设置 JWT_SECRET}
+      JWT_EXPIRES: ${JWT_EXPIRES:-7d}
+    volumes:
+      # SQLite 与房间快照持久化
+      - ${DATA_DIR:-./data}:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
