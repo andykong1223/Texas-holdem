@@ -329,13 +329,6 @@
           <div id="hero-hand-rank" class="hero-hand-rank" aria-live="polite"></div>
           <div id="hero-meta">
             <span id="action-status" class="action-status">等待开局…</span>
-            <div id="timer-row">
-              <div id="timer-bar-container">
-                <div id="timer-bar"></div>
-                <span id="timer-text">20</span>
-              </div>
-              <button type="button" class="btn-extend-timer" id="btn-extend-timer" onclick="extendTurnTimer()" title="延长思考时间">+10秒</button>
-            </div>
           </div>
         </div>
 
@@ -356,6 +349,13 @@
             <button type="button" class="act-btn act-raise" onclick="copyCode()">邀请好友加入</button>
           </div>
           <div class="actions-row" id="actions-row">
+            <button type="button" class="act-btn act-extend" id="btn-extend-timer" onclick="extendTurnTimer()" title="延长思考时间 +10秒" aria-label="延长思考时间">
+              <svg class="extend-ring" viewBox="0 0 36 36" aria-hidden="true">
+                <circle class="extend-ring-bg" cx="18" cy="18" r="15.5" />
+                <circle class="extend-ring-fg" id="timer-ring-fg" cx="18" cy="18" r="15.5" pathLength="100" />
+              </svg>
+              <span class="extend-label">+10</span>
+            </button>
             <button class="act-btn act-fold" id="btn-fold" onclick="sendAction('fold')">弃牌</button>
             <button class="act-btn act-check" id="btn-check" onclick="sendAction('check')">过牌</button>
             <button class="act-btn act-call" id="btn-call" onclick="sendAction('call')">跟注</button>

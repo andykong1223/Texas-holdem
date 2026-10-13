@@ -536,40 +536,33 @@ socket.on('kicked', (data) => {
 // TIMER COUNTDOWN
 // -------------------------
 function startTimerCountdown(endTime, isMyTurn = false) {
-  const bar = document.getElementById('timer-bar');
-  const text = document.getElementById('timer-text');
-  const row = document.getElementById('timer-row');
   const extendBtn = document.getElementById('btn-extend-timer');
+  const ringFg = document.getElementById('timer-ring-fg');
   if (!endTime || endTime === 0) {
-    row?.classList.remove('show');
-    extendBtn?.classList.remove('show');
+    extendBtn?.classList.remove('show', 'urgent');
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     return;
   }
-  row?.classList.add('show');
   if (extendBtn) extendBtn.classList.toggle('show', !!isMyTurn);
   if (timerInterval) clearInterval(timerInterval);
   const initialLeft = Math.max(0.1, (endTime - Date.now()) / 1000);
   const update = () => {
     const timeLeft = Math.max(0, (endTime - Date.now()) / 1000);
-    const pct = (timeLeft / initialLeft) * 100;
-    bar.style.width = pct + '%';
-    text.innerText = Math.ceil(timeLeft) + 's';
+    const pct = Math.max(0, Math.min(100, (timeLeft / initialLeft) * 100));
+    // pathLength=100：dashoffset 越大剩余弧越短
+    if (ringFg) ringFg.style.strokeDashoffset = String(100 - pct);
+    extendBtn?.classList.toggle('urgent', timeLeft < 5);
     if (timeLeft < 5) {
-      bar.style.background = 'var(--btn-danger)';
       const wholeSec = Math.ceil(timeLeft);
       if (timeLeft > 0 && wholeSec !== update._lastTick) {
         update._lastTick = wholeSec;
         playSound('tick');
       }
-    } else {
-      bar.style.background = 'var(--btn-secondary)';
     }
     if (timeLeft <= 0) {
       clearInterval(timerInterval);
       timerInterval = null;
-      row?.classList.remove('show');
-      extendBtn?.classList.remove('show');
+      extendBtn?.classList.remove('show', 'urgent');
     }
   };
   update();
@@ -1108,6 +1101,49 @@ function cardsSignature(cards) {
 }
 
 /**
+ * WePoker 风格站位（竖屏）：自己在底中，其余绕椭圆疏密均匀。
+ * relIndex 0 = 自己，逆时针先往左。坐标为桌面比例。
+ */
+const WEPOKER_SEAT_LAYOUTS = {
+  2: [[0.50, 0.88], [0.50, 0.12]],
+  3: [[0.50, 0.88], [0.14, 0.40], [0.86, 0.40]],
+  4: [[0.50, 0.88], [0.12, 0.48], [0.50, 0.12], [0.88, 0.48]],
+  5: [[0.50, 0.88], [0.14, 0.62], [0.20, 0.22], [0.80, 0.22], [0.86, 0.62]],
+  6: [[0.50, 0.88], [0.14, 0.68], [0.14, 0.32], [0.50, 0.12], [0.86, 0.32], [0.86, 0.68]],
+  7: [
+    [0.50, 0.88], [0.14, 0.70], [0.12, 0.40], [0.28, 0.14],
+    [0.72, 0.14], [0.88, 0.40], [0.86, 0.70]
+  ],
+  8: [
+    [0.50, 0.88], [0.16, 0.72], [0.10, 0.48], [0.18, 0.20],
+    [0.50, 0.10], [0.82, 0.20], [0.90, 0.48], [0.84, 0.72]
+  ],
+  9: [
+    [0.50, 0.88],
+    [0.16, 0.74],
+    [0.08, 0.50],
+    [0.16, 0.26],
+    [0.34, 0.10],
+    [0.66, 0.10],
+    [0.84, 0.26],
+    [0.92, 0.50],
+    [0.84, 0.74]
+  ]
+};
+
+function seatPointFromWepoker(relIndex, maxPlayers, w, h) {
+  const layout = WEPOKER_SEAT_LAYOUTS[maxPlayers];
+  if (!layout || !layout[relIndex]) return null;
+  const [fx, fy] = layout[relIndex];
+  const x = fx * w;
+  const y = fy * h;
+  let nx = fx - 0.5;
+  let ny = fy - 0.5;
+  const len = Math.hypot(nx, ny) || 1;
+  return { x, y, nx: nx / len, ny: ny / len };
+}
+
+/**
  * 跑道形桌边座席：沿桌边等弧长均匀分布。
  * t∈[0,1)，0 在底边中点，逆时针（屏幕坐标下先往左）。
  * 返回 {x,y, nx,ny}，n 为指向桌外的大致法向（用于注码偏移）。
@@ -1248,9 +1284,9 @@ function renderTable() {
   const positionMap = computePositionMap(currentRoom);
   const meForSeat = currentRoom.players.find(p => p.id === mySocketId);
   const anchorSeat = (meForSeat?.seatIndex ?? 0);
-  const seatHalfW = isMobileLayout ? 34 : 43;
-  const seatHalfH = isMobileLayout ? 46 : 54;
-  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:stad-even`;
+  const seatHalfW = isMobileLayout ? 28 : 43;
+  const seatHalfH = isMobileLayout ? 38 : 54;
+  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:wepoker`;
   const layoutChanged = seatsContainer.dataset.layoutKey !== layoutKey;
   if (layoutChanged) {
     seatsContainer.dataset.layoutKey = layoutKey;
@@ -1258,10 +1294,11 @@ function renderTable() {
   }
 
   for (let seatIdx = 0; seatIdx < maxPlayers; seatIdx++) {
-    // 相对自己旋转：自己在底边中点，其余沿桌边等弧长均匀分布
+    // 相对自己旋转：自己在底边中点；手机用手调椭圆站位，桌面用等弧长
     const relIndex = ((seatIdx - anchorSeat) % maxPlayers + maxPlayers) % maxPlayers;
     const t = relIndex / maxPlayers;
-    const pt = stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.12 : 0.09);
+    const pt = (isMobileLayout && seatPointFromWepoker(relIndex, maxPlayers, tableWidth, tableHeight))
+      || stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.14 : 0.09);
     const x = pt.x;
     const y = pt.y;
     // 注额往桌心偏一点（沿法向反方向）
@@ -1440,17 +1477,25 @@ function renderTable() {
   const waitingActions = document.getElementById('waiting-actions');
   const isWaitingLobby = currentRoom.gameState.status === 'waiting';
 
-  // 开局后固定行动区高度，避免轮到你时牌桌忽大忽小
-  if (actionBar) actionBar.classList.toggle('in-hand', !isWaitingLobby);
+  const isMobileUi = window.innerWidth <= 900;
+  if (actionBar) {
+    actionBar.classList.toggle('in-hand', !isWaitingLobby);
+    actionBar.classList.toggle('my-turn', !!isMyTurn);
+  }
 
   if (waitingActions) waitingActions.classList.toggle('show', isWaitingLobby);
-  if (actionsRow) actionsRow.style.display = isWaitingLobby ? 'none' : 'grid';
+  // 手机用 CSS 控制圆形按钮显隐；桌面仍用 display
+  if (actionsRow) {
+    if (isMobileUi) actionsRow.style.display = '';
+    else actionsRow.style.display = isWaitingLobby ? 'none' : 'flex';
+  }
 
   if (isMyTurn) {
     turnIndicator.classList.remove('hidden');
     actionStatus.innerText = '';
     betPresets.classList.add('show');
-    raiseRow.classList.add('show');
+    if (!isMobileUi) raiseRow.classList.add('show');
+    else raiseRow.classList.remove('show');
   } else {
     turnIndicator.classList.add('hidden');
     betPresets.classList.remove('show');
@@ -1502,8 +1547,7 @@ function renderTable() {
       startTimerCountdown(endTime, isMyTurn);
     }
   } else {
-    document.getElementById('timer-row')?.classList.remove('show');
-    document.getElementById('btn-extend-timer')?.classList.remove('show');
+    document.getElementById('btn-extend-timer')?.classList.remove('show', 'urgent');
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
 }
