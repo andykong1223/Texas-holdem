@@ -817,6 +817,19 @@ input[type="checkbox"] { width: auto; }
   animation: hero-deal 0.35s ease;
 }
 #hero-cards:empty { display: none; }
+.hero-stack {
+  display: none;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #eef2ef;
+  background: rgba(0,0,0,0.72);
+  border: 1px solid rgba(255,255,255,0.12);
+  padding: 3px 12px;
+  border-radius: 999px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.55);
+  letter-spacing: 0.02em;
+}
+.hero-stack.show { display: inline-block; }
 .hero-hand-rank {
   min-height: 1.2em;
   font-size: 0.95rem;
@@ -1449,6 +1462,11 @@ input[type="checkbox"] { width: auto; }
     height: 82px;
     border-radius: 8px;
     box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+  }
+  .hero-stack {
+    font-size: 0.8rem;
+    padding: 4px 14px;
+    order: 2;
   }
   .hero-hand-rank {
     font-size: 0.8rem;

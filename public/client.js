@@ -1260,6 +1260,22 @@ function updateHeroCardsDom(me) {
   }
 }
 
+/** 手机端自己座位隐藏，筹码改显示在手牌区 */
+function updateHeroStackDom(me) {
+  const el = document.getElementById('hero-stack');
+  if (!el) return;
+  if (!me || isSpectator) {
+    el.textContent = '';
+    el.classList.remove('show');
+    return;
+  }
+  const text = `${me.name || '我'} · ${formatChips(me.chips)}`;
+  if (el.dataset.stackKey === text) return;
+  el.dataset.stackKey = text;
+  el.textContent = text;
+  el.classList.add('show');
+}
+
 function updateCommunityCardsDom() {
   const ccDiv = document.getElementById('community-cards');
   if (!ccDiv) return;
@@ -1417,9 +1433,10 @@ function renderTable() {
     : '';
   if (potDiv.textContent !== potText) potDiv.textContent = potText;
 
-  // 自己的大牌（底部 hero）+ 当前牌型
+  // 自己的大牌（底部 hero）+ 筹码 + 当前牌型
   const me = currentRoom.players.find(p => p.id === mySocketId);
   updateHeroCardsDom(me);
+  updateHeroStackDom(me);
   updateHeroHandRank(me);
 
   // 开局 / 下一手
