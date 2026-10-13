@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>德州大厅</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lobby.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <!-- AUTH -->
+    <div id="screen-auth" class="screen active">
+      <div class="auth-shell">
+        <div class="auth-brand">
+          <h1 class="logo">德州 <span>大厅</span></h1>
+          <p class="tagline">登录后进入牌局 · 战绩可查</p>
+        </div>
+        <div class="auth-card">
+          <div class="auth-tabs">
+            <button type="button" class="auth-tab active" id="tab-login">登录</button>
+            <button type="button" class="auth-tab" id="tab-register">注册</button>
+          </div>
+          <form id="form-login" class="auth-form">
+            <label>用户名</label>
+            <input id="login-username" autocomplete="username" placeholder="admin 或你的账号" required>
+            <label>密码</label>
+            <input id="login-password" type="password" autocomplete="current-password" placeholder="密码" required>
+            <button class="btn btn-primary btn-full" type="submit">进入大厅</button>
+            <p class="auth-hint">默认管理员：admin / admin123</p>
+          </form>
+          <form id="form-register" class="auth-form" style="display:none;">
+            <label>用户名</label>
+            <input id="reg-username" autocomplete="username" placeholder="3-20 位字母数字" required>
+            <label>昵称</label>
+            <input id="reg-nickname" maxlength="12" placeholder="牌桌上显示的名字" required>
+            <label>密码</label>
+            <input id="reg-password" type="password" autocomplete="new-password" placeholder="至少 6 位" required>
+            <button class="btn btn-primary btn-full" type="submit">注册并登录</button>
+            <p class="auth-hint">新用户赠送 10000 筹码</p>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN SHELL：首页 / 牌局 / 玩家 / 个人 -->
+    <div id="screen-main" class="screen">
+      <header class="app-topbar">
+        <div class="brand-mini">德州大厅</div>
+        <div class="topbar-user">
+          <span data-user-nick>—</span>
+          <span class="chip-pill">筹码 <b data-user-chips>0</b></span>
+          <a class="btn btn-chip" data-admin-only href="/admin.html" style="display:none;">后台</a>
+        </div>
+      </header>
+
+      <div class="main-pages">
+        <!-- 首页 -->
+        <div id="tab-home" class="tab-page active">
+          <section class="home-hero">
+            <p class="eyebrow">Texas Hold'em</p>
+            <h1>德州大厅</h1>
+            <p class="subtitle">开桌、对局、结算记录一站完成</p>
+            <button type="button" class="btn btn-primary btn-full" id="btn-goto-create">创建牌桌</button>
+          </section>
+
+          <section class="home-section">
+            <div class="section-head">
+              <h2>进行中</h2>
+              <button class="btn btn-secondary btn-sm" id="btn-refresh-lobby">刷新</button>
+            </div>
+            <div class="quick-join">
+              <input id="lobby-join-code" maxlength="6" placeholder="房间号" oninput="this.value=this.value.toUpperCase()">
+              <input id="lobby-join-password" type="password" placeholder="密码(选填)">
+              <button class="btn btn-primary btn-sm" id="btn-lobby-join">加入</button>
+              <button class="btn btn-tertiary btn-sm" id="btn-lobby-spectate">观战</button>
+            </div>
+            <div id="lobby-room-list" class="room-list"></div>
+          </section>
+
+          <section class="home-section">
+            <div class="section-head">
+              <h2>最近牌局</h2>
+              <button type="button" class="text-link" data-goto-tab="games">全部</button>
+            </div>
+            <div id="home-recent-sessions" class="session-list"></div>
+          </section>
+        </div>
+
+        <!-- 牌局记录 -->
+        <div id="tab-games" class="tab-page">
+          <div class="tab-page-head">
+            <h2>牌局记录</h2>
+            <button class="btn btn-primary btn-sm" id="btn-games-create">创建</button>
+          </div>
+          <p class="tab-hint">已结算的整场牌局 · 点击查看明细</p>
+          <div id="games-session-list" class="session-list"></div>
+        </div>
+
+        <!-- 玩家 -->
+        <div id="tab-players" class="tab-page">
+          <div class="tab-page-head">
+            <h2>玩家战绩</h2>
+          </div>
+          <p class="tab-hint">按整场盈亏汇总排名</p>
+          <div id="players-stats-list" class="player-stats-list"></div>
+        </div>
+
+        <!-- 个人 -->
+        <div id="tab-profile" class="tab-page">
+          <div class="profile-shell">
+            <h2>个人</h2>
+            <div class="profile-card">
+              <div class="profile-id">账号 <b id="profile-username">—</b></div>
+              <div class="stat-grid">
+                <div class="stat"><div class="stat-val" id="stat-chips">0</div><div class="stat-label">筹码</div></div>
+                <div class="stat"><div class="stat-val" id="stat-hands">0</div><div class="stat-label">总手数</div></div>
+                <div class="stat"><div class="stat-val" id="stat-wins">0</div><div class="stat-label">盈利局</div></div>
+                <div class="stat"><div class="stat-val" id="stat-profit">0</div><div class="stat-label">总盈亏</div></div>
+              </div>
+              <h3 class="hud-title">牌桌数据</h3>
+              <p class="tab-hint" id="profile-hud-hint">需有行动记录后才会计算</p>
+              <div id="profile-hud-grid" class="hud-grid"></div>
+              <form id="form-profile" class="profile-form">
+                <label>昵称</label>
+                <input id="profile-nickname" maxlength="12" required>
+                <button class="btn btn-primary" type="submit">保存昵称</button>
+              </form>
+              <button class="btn btn-leave btn-full" id="btn-logout" style="margin-top:12px;">退出登录</button>
+            </div>
+            <h3>我的战绩</h3>
+            <div id="profile-history" class="hand-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <nav class="bottom-tabbar" id="bottom-tabbar">
+        <button type="button" class="tab-item active" data-tab="home">
+          <span class="tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/></svg>
+          </span><span>首页</span>
+        </button>
+        <button type="button" class="tab-item" data-tab="games">
+          <span class="tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 5v14"/></svg>
+          </span><span>牌局</span>
+        </button>
+        <button type="button" class="tab-item" data-tab="players">
+          <span class="tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.4"/><path d="M14.2 19a4.2 4.2 0 0 1 6.3-3.6"/></svg>
+          </span><span>玩家</span>
+        </button>
+        <button type="button" class="tab-item" data-tab="profile">
+          <span class="tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg>
+          </span><span>个人</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- 牌局详情弹层 -->
+    <div id="session-detail-modal" class="modal">
+      <div class="modal-content session-detail-content">
+        <div class="modal-header">
+          <h2 id="session-detail-title">牌局详情</h2>
+          <button class="btn btn-tiny" id="btn-close-session-detail">关闭</button>
+        </div>
+        <p id="session-detail-meta" class="tab-hint"></p>
+        <div id="session-detail-body"></div>
+      </div>
+    </div>
+
+    <!-- 玩家详情弹层 -->
+    <div id="player-detail-modal" class="modal">
+      <div class="modal-content player-detail-content">
+        <div class="modal-header">
+          <h2 id="player-detail-title">玩家详情</h2>
+          <button class="btn btn-tiny" id="btn-close-player-detail">关闭</button>
+        </div>
+        <div id="player-detail-body"></div>
+      </div>
+    </div>
+
+    <!-- HOST -->
+    <div id="screen-host" class="screen">
+      <div class="form-container">
+        <button class="btn btn-back" id="btn-host-back">&larr; 返回大厅</button>
+        <h2>创建牌桌</h2>
+        <p class="join-hint">将从账户筹码中扣除买入额；离开牌桌后剩余筹码退回账户。</p>
+        <div class="form-group">
+          <label>房间名</label>
+          <input type="text" id="host-roomname" placeholder="例如：周五局" maxlength="20">
+        </div>
+        <div class="form-group">
+          <label>房间密码 <small>（可选）</small></label>
+          <input type="text" id="host-password" placeholder="留空则大厅可见可进" autocomplete="off">
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>小盲</label><input type="number" id="host-sb" value="10" min="1"></div>
+          <div class="form-group"><label>大盲</label><input type="number" id="host-bb" value="20" min="1"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>人数上限</label><input type="number" id="host-max" value="6" min="2" max="12"></div>
+          <div class="form-group"><label>买入</label><input type="number" id="host-chips" value="1000" min="100"></div>
+        </div>
+        <div class="form-group">
+          <label>牌局时长：<strong id="host-session-label">1 小时</strong></label>
+          <input type="range" id="host-session-minutes" min="60" max="1440" step="30" value="60" class="session-range">
+          <div class="range-ticks">
+            <span>1h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span>
+          </div>
+          <small style="color:var(--text-dim);margin-top:4px;">每格半小时，到时自动结算</small>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="host-rebuys" checked> 允许重新买入</label>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="host-rebuy-approval"> 买入需房主审核</label>
+          <small>不勾选则玩家买入立即到账，无需房主批准</small>
+        </div>
+        <div class="form-group checkbox-group">
+          <label><input type="checkbox" id="host-timer" checked> 开启行动倒计时</label>
+        </div>
+        <div class="form-group">
+          <label>行动倒计时秒数</label>
+          <input type="number" id="host-timer-duration" value="20" min="5" max="120">
+        </div>
+        <!-- legacy ids for client.js nickname helpers -->
+        <input type="hidden" id="host-nickname" value="">
+        <button class="btn btn-primary btn-full" onclick="createRoom()">创建并进入</button>
+      </div>
+    </div>
+
+    <div id="screen-game" class="screen">
+      <div id="sidebar">
+        <div class="sidebar-header">
+          <h3>玩家列表</h3>
+          <button type="button" class="btn btn-tiny sidebar-close" onclick="closeSidebar()" aria-label="关闭">关闭</button>
+        </div>
+        <div class="sidebar-section">
+          <h3>玩家</h3>
+          <div id="sidebar-players"></div>
+        </div>
+        <div class="sidebar-section">
+          <h3>观战</h3>
+          <div id="sidebar-spectators"></div>
+        </div>
+        <div id="spectator-join-area" style="display:none;">
+          <button class="btn btn-secondary btn-full btn-small-text" id="btn-request-join" onclick="requestJoin()">申请入座</button>
+          <button class="btn btn-tiny btn-full" id="btn-cancel-join" onclick="cancelJoin()" style="display:none; margin-top:6px;">取消申请</button>
+        </div>
+        <div id="rebuy-area" style="display:none;">
+          <button class="btn btn-allin btn-full" onclick="openRebuyModal()">申请买入</button>
+        </div>
+        <div id="rebuy-pending-area" style="display:none;">
+          <p style="font-size:0.78rem; color:var(--gold); text-align:center; padding:6px;">买入申请等待房主确认…</p>
+          <button class="btn btn-tiny btn-full" onclick="cancelRebuyRequest()">取消申请</button>
+        </div>
+      </div>
+
+      <div id="table-container">
+        <div id="top-bar">
+          <div class="room-info">
+            <span id="room-code-display"></span>
+            <span id="session-clock" class="session-clock" title="剩余牌局时间"></span>
+            <button class="btn btn-chip" onclick="copyCode()" title="复制邀请链接">邀请</button>
+            <span id="host-display"></span>
+          </div>
+          <div class="top-actions">
+            <div class="top-menu" id="top-menu">
+              <button type="button" class="btn btn-chip top-menu-trigger" id="top-menu-btn" onclick="toggleTopMenu(event)" title="菜单" aria-haspopup="true" aria-expanded="false">
+                菜单
+                <span class="notification-badge" id="menu-badge">0</span>
+              </button>
+              <div class="top-menu-dropdown" id="top-menu-dropdown" role="menu">
+                <button type="button" class="top-menu-item" role="menuitem" id="sound-btn" onclick="menuAction(toggleSound)">
+                  <span id="sound-btn-label">🔊 音效</span>
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="host-settings-btn" onclick="menuAction(openSettings)" style="display:none;">
+                  ⚙️ 房主设置
+                  <span class="notification-badge" id="settings-badge">0</span>
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="players-btn" onclick="menuAction(toggleSidebar)">
+                  👥 玩家列表
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="menu-rebuy-btn" onclick="menuAction(openRebuyFromMenu)">
+                  💰 立即买入
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="history-btn" onclick="menuAction(openHandHistory)">
+                  📋 手牌记录
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="chat-btn" onclick="menuAction(toggleChat)">
+                  💬 聊天
+                </button>
+                <button type="button" class="top-menu-item top-menu-item-danger" role="menuitem" onclick="menuAction(leaveRoom)">
+                  离开牌桌
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="table-stage">
+          <div id="poker-table">
+            <div class="felt-inner"></div>
+            <div id="win-banner" class="win-banner"></div>
+            <div id="start-overlay" class="start-overlay">
+              <button class="btn btn-start" id="btn-start-game" onclick="startGame()">开始游戏</button>
+              <p id="waiting-text" class="waiting-text">等待房主开局…</p>
+            </div>
+            <div id="next-hand-overlay" class="next-hand-overlay hidden">
+              <div class="next-hand-box">
+                <p class="next-hand-text" id="next-hand-status">本手结束</p>
+                <button class="btn btn-start" id="btn-next-hand" onclick="startNextHand()" style="display:none;">下一手</button>
+                <p class="waiting-text" id="next-hand-countdown">等待房主开始下一手…</p>
+              </div>
+            </div>
+            <div id="board-center">
+              <div id="pot-display"></div>
+              <div id="community-cards"></div>
+            </div>
+            <div id="seats-container"></div>
+          </div>
+        </div>
+
+        <div id="hero-zone">
+          <div id="hero-cards"></div>
+          <div id="hero-hand-rank" class="hero-hand-rank" aria-live="polite"></div>
+          <div id="hero-meta">
+            <span id="action-status" class="action-status">等待开局…</span>
+            <div id="timer-row">
+              <div id="timer-bar-container">
+                <div id="timer-bar"></div>
+                <span id="timer-text">20</span>
+              </div>
+              <button type="button" class="btn-extend-timer" id="btn-extend-timer" onclick="extendTurnTimer()" title="延长思考时间">+10秒</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="action-bar">
+          <div id="turn-indicator" class="turn-indicator hidden">轮到你了</div>
+          <div class="bet-presets" id="bet-presets">
+            <button type="button" class="preset-btn" onclick="setRaisePreset(0.33)">1/3</button>
+            <button type="button" class="preset-btn" onclick="setRaisePreset(0.5)">1/2</button>
+            <button type="button" class="preset-btn" onclick="setRaisePreset(0.75)">3/4</button>
+            <button type="button" class="preset-btn" onclick="setRaisePreset(1)">底池</button>
+            <button type="button" class="preset-btn preset-allin" onclick="sendAllIn()">全下</button>
+          </div>
+          <div class="raise-slider-row" id="raise-slider-row">
+            <input type="range" id="raise-slider" min="0" max="100" value="0" oninput="onRaiseSlider()">
+            <input type="number" id="raise-amount" min="0" placeholder="加注" inputmode="numeric" title="加注金额">
+          </div>
+          <div id="waiting-actions" class="waiting-actions">
+            <button type="button" class="act-btn act-raise" onclick="copyCode()">邀请好友加入</button>
+          </div>
+          <div class="actions-row" id="actions-row">
+            <button class="act-btn act-fold" id="btn-fold" onclick="sendAction('fold')">弃牌</button>
+            <button class="act-btn act-check" id="btn-check" onclick="sendAction('check')">过牌</button>
+            <button class="act-btn act-call" id="btn-call" onclick="sendAction('call')">跟注</button>
+            <button class="act-btn act-raise" id="btn-raise" onclick="sendRaise()">加注</button>
+            <button class="act-btn act-allin" id="btn-allin" onclick="sendAllIn()" style="display:none;">全下</button>
+          </div>
+        </div>
+
+        <div id="chat-container">
+          <div class="chat-header">
+            <h3>牌桌聊天</h3>
+            <button class="btn btn-tiny" onclick="toggleChat()">关闭</button>
+          </div>
+          <div id="chat-messages"></div>
+          <div class="chat-input-row" id="chat-input-row">
+            <input type="text" id="chat-input" placeholder="说点什么…" onkeypress="if(event.key==='Enter') sendChat()">
+            <button class="btn btn-tiny" onclick="sendChat()">发送</button>
+            <button class="btn btn-tiny" onclick="toggleEmojiPicker()">表情</button>
+          </div>
+          <div id="chat-spectator-notice" class="chat-spectator-notice" style="display:none;">
+            观战不能发言或发表情。
+          </div>
+          <div id="emoji-picker" class="emoji-picker" style="display:none;">
+            <span onclick="sendEmoji('😂')">😂</span>
+            <span onclick="sendEmoji('🔥')">🔥</span>
+            <span onclick="sendEmoji('👏')">👏</span>
+            <span onclick="sendEmoji('😮')">😮</span>
+            <span onclick="sendEmoji('💀')">💀</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="settings-modal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>房主设置</h2>
+            <button class="btn btn-tiny" onclick="closeSettings()">关闭</button>
+          </div>
+          <div class="settings-group">
+            <h3>踢出</h3>
+            <p class="setting-desc">玩家被踢后变观战；观战者会被移出房间。</p>
+            <select id="kick-select"></select>
+            <button class="btn btn-danger" onclick="kickPlayer()">踢出</button>
+          </div>
+          <div class="settings-group">
+            <h3>修改筹码</h3>
+            <p class="setting-desc">仅在两手之间有效。</p>
+            <select id="editchips-select"></select>
+            <input type="number" id="editchips-amount" placeholder="新筹码数">
+            <button class="btn btn-primary settings-action-btn" onclick="editChips()">确认</button>
+          </div>
+          <div class="settings-group">
+            <h3>房间密码</h3>
+            <p class="setting-desc">留空则取消密码。</p>
+            <input type="text" id="new-password" placeholder="新密码（留空=无密码）">
+            <button class="btn btn-primary settings-action-btn" onclick="changePassword()">更新密码</button>
+          </div>
+          <div class="settings-group">
+            <h3>倒计时</h3>
+            <p class="setting-desc">关闭后玩家可随意思考。时长可中途修改。</p>
+            <p class="setting-status">当前：<span id="timer-status">开启</span></p>
+            <button class="btn btn-secondary" onclick="toggleTimer()">开关倒计时</button>
+            <div style="margin-top:8px;">
+              <label>秒数：</label>
+              <input type="number" id="settings-timer-duration" min="5" max="120" style="margin-top:4px;">
+              <button class="btn btn-primary settings-action-btn" onclick="changeTimerDuration()">设定</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>重新买入</h3>
+            <p class="setting-desc">开启后筹码归零可买回；关闭则淘汰。</p>
+            <p class="setting-status">当前：<span id="rebuys-status">允许</span></p>
+            <button class="btn btn-secondary" onclick="toggleRebuys()">开关买入</button>
+            <p class="setting-status" style="margin-top:8px;">审核：<span id="rebuy-approval-status">免审</span></p>
+            <button class="btn btn-secondary" onclick="toggleRebuyApproval()">开关买入审核</button>
+          </div>
+          <div class="settings-group">
+            <h3>待处理买入</h3>
+            <p class="setting-desc">可修改金额后批准或拒绝。</p>
+            <div id="rebuy-requests-list" class="host-notifications">
+              <p class="no-notifications">暂无申请</p>
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>待处理入座</h3>
+            <p class="setting-desc">观战者申请入座。</p>
+            <div id="join-requests-list" class="host-notifications">
+              <p class="no-notifications">暂无申请</p>
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>结束房间</h3>
+            <p class="setting-desc">解散房间，所有人返回首页。不可撤销。</p>
+            <button class="btn btn-danger btn-full" onclick="endGame()">解散房间</button>
+          </div>
+          <div class="settings-group">
+            <h3>人数上限</h3>
+            <p class="setting-desc">2–12，不影响已入座玩家。</p>
+            <input type="number" id="settings-max-players" min="2" max="12">
+            <button class="btn btn-primary settings-action-btn" onclick="changeMaxPlayers()">设定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="join-modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>加入房间</h2>
+          <button class="btn btn-tiny" onclick="closeJoinModal()">关闭</button>
+        </div>
+        <div class="form-group">
+          <label>房间号</label>
+          <input type="text" id="join-modal-code" placeholder="6 位房间号" maxlength="6" oninput="this.value = this.value.toUpperCase()">
+        </div>
+        <div class="form-group">
+          <label>你的昵称</label>
+          <input type="text" id="join-modal-nickname" placeholder="输入昵称" maxlength="12">
+        </div>
+        <div class="form-group">
+          <label>密码 <small>（有则必填）</small></label>
+          <input type="password" id="join-modal-password" placeholder="无密码可留空">
+        </div>
+        <button class="btn btn-primary btn-full" onclick="joinRoomFromModal()">进入牌桌</button>
+        <button class="btn btn-tertiary btn-full" onclick="spectateFromModal()" style="margin-top:8px;">仅观战</button>
+      </div>
+    </div>
+
+    <div id="rebuy-modal" class="modal">
+      <div class="modal-content rebuy-modal-content">
+        <div class="modal-header">
+          <h2>申请买入</h2>
+          <button class="btn btn-tiny" onclick="closeRebuyModal()">关闭</button>
+        </div>
+        <p id="rebuy-modal-desc" style="font-size:0.85rem; color:var(--text-dim); margin-bottom:12px;">填写买入金额，需房主批准。</p>
+        <div class="form-group">
+          <label>买入金额</label>
+          <input type="number" id="rebuy-modal-amount" class="rebuy-amount-input" placeholder="1000" min="1">
+        </div>
+        <button class="btn btn-primary btn-full" id="rebuy-modal-submit" onclick="sendRebuyRequest()">提交申请</button>
+      </div>
+    </div>
+
+    <div id="hand-history-modal" class="modal">
+      <div class="modal-content hand-history-modal-content">
+        <div class="modal-header">
+          <h2>本局手牌</h2>
+          <button class="btn btn-tiny" onclick="closeHandHistory()">关闭</button>
+        </div>
+        <div class="hh-pager">
+          <button class="btn btn-secondary btn-sm" id="hh-prev" onclick="handHistoryPrev()">上一手</button>
+          <span id="hh-page-label">—</span>
+          <button class="btn btn-secondary btn-sm" id="hh-next" onclick="handHistoryNext()">下一手</button>
+        </div>
+        <div id="hh-body" class="hh-body">
+          <p class="hh-empty">暂无已完成的手牌</p>
+        </div>
+        <p class="hh-hint">左右滑动查看各街 · Shift+滚轮翻手</p>
+      </div>
+    </div>
+
+    <!-- SETTLEMENT -->
+    <div id="screen-settlement" class="screen">
+      <div class="settle-shell">
+        <h2>牌局结算</h2>
+        <p id="settle-reason" class="settle-reason">本场已结束</p>
+        <p id="settle-meta" class="settle-meta"></p>
+        <div class="settle-table-wrap">
+          <table class="settle-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>玩家</th>
+                <th>买入</th>
+                <th>带出</th>
+                <th>盈亏</th>
+              </tr>
+            </thead>
+            <tbody id="settle-tbody"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-settle-lobby" style="margin-top:16px;">返回大厅</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="js/api-client.js"></script>
+  <script src="client.js"></script>
+  <script src="js/lobby-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>后台管理 · 德州大厅</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lobby.css">
+  <style>
+    body { overflow: auto; height: auto; min-height: 100vh; }
+    .admin-wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+    .admin-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .admin-table th, .admin-table td { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 8px; text-align: left; }
+    .admin-table th { color: #9aab9f; font-weight: 600; }
+    .admin-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .admin-actions input { width: 90px; padding: 6px 8px; border-radius: 8px; border: 1px solid #3a4540; background: #101612; color: #fff; }
+    .search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .search-row input { flex: 1; padding: 10px; border-radius: 10px; border: 1px solid #3a4540; background: #101612; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap">
+    <header class="app-topbar" style="border-radius: 14px; margin-bottom: 12px;">
+      <div class="brand-mini">后台管理</div>
+      <div class="topbar-user">
+        <a class="btn btn-chip" href="/">返回大厅</a>
+        <button class="btn btn-chip btn-leave" id="btn-logout">退出</button>
+      </div>
+    </header>
+    <div class="admin-stats">
+      <div class="stat"><div class="stat-val" id="s-users">0</div><div class="stat-label">用户</div></div>
+      <div class="stat"><div class="stat-val" id="s-sessions">0</div><div class="stat-label">进行中牌局</div></div>
+      <div class="stat"><div class="stat-val" id="s-hands">0</div><div class="stat-label">历史手数</div></div>
+    </div>
+    <div class="search-row">
+      <input id="q" placeholder="搜索用户名 / 昵称">
+      <button class="btn btn-secondary" id="btn-search">搜索</button>
+      <button class="btn btn-primary" id="btn-reload">刷新</button>
+    </div>
+    <div class="lobby-main">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>账号</th><th>昵称</th><th>筹码</th><th>手数/盈亏</th><th>状态</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="js/api-client.js"></script>
+  <script>
+    function toast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2200);
+    }
+    async function ensureAdmin() {
+      if (!API.getToken()) { location.href = '/'; return null; }
+      const { user } = await API.me();
+      if (user.role !== 'admin') { toast('需要管理员权限'); setTimeout(() => location.href = '/', 800); return null; }
+      return user;
+    }
+    async function load() {
+      const stats = await API.adminStats();
+      document.getElementById('s-users').textContent = stats.users;
+      document.getElementById('s-sessions').textContent = stats.activeSessions;
+      document.getElementById('s-hands').textContent = stats.hands;
+      const q = document.getElementById('q').value.trim();
+      const { users } = await API.adminUsers(q);
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td>${u.id}</td>
+          <td>${u.username}${u.role === 'admin' ? ' ·管' : ''}</td>
+          <td>${u.nickname}</td>
+          <td>${u.chips}</td>
+          <td>${u.totalHands} / ${u.totalProfit}</td>
+          <td>${u.status}</td>
+          <td>
+            <div class="admin-actions">
+              <input type="number" id="chips-${u.id}" placeholder="筹码" value="${u.chips}">
+              <button class="btn btn-primary btn-sm" data-set="${u.id}">设筹码</button>
+              <button class="btn btn-secondary btn-sm" data-add="${u.id}">+1000</button>
+              <button class="btn btn-danger btn-sm" data-ban="${u.id}">${u.status === 'banned' ? '解封' : '封禁'}</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('[data-set]').forEach(btn => btn.onclick = async () => {
+        const id = btn.getAttribute('data-set');
+        const chips = parseInt(document.getElementById('chips-' + id).value);
+        await API.adminPatchUser(id, { chips });
+        toast('已更新筹码'); load();
+      });
+      tbody.querySelectorAll('[data-add]').forEach(btn => btn.onclick = async () => {
+        await API.adminPatchUser(btn.getAttribute('data-add'), { adjustChips: 1000 });
+        toast('已加 1000'); load();
+      });
+      tbody.querySelectorAll('[data-ban]').forEach(btn => btn.onclick = async () => {
+        const id = btn.getAttribute('data-ban');
+        const row = users.find(x => String(x.id) === id);
+        const status = row.status === 'banned' ? 'active' : 'banned';
+        await API.adminPatchUser(id, { status });
+        toast(status === 'banned' ? '已封禁' : '已解封'); load();
+      });
+    }
+    document.getElementById('btn-logout').onclick = () => { API.clearSession(); location.href = '/'; };
+    document.getElementById('btn-search').onclick = () => load();
+    document.getElementById('btn-reload').onclick = () => load();
+    ensureAdmin().then(u => { if (u) load(); }).catch(e => { toast(e.message); location.href = '/'; });
+  </script>
+</body>
+</html>
