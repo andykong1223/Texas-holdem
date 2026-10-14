@@ -1430,85 +1430,96 @@ function cardsSignature(cards) {
 }
 
 /**
- * PokerNow PC：横向椭圆；手机：竖向跑道（底1 / 顶1 / 左右列）。
+ * PokerNow PC：横向椭圆，座位贴桌边（外挂），中间留公共牌区。
  * relIndex 0 = 自己在底边，逆时针先往左。坐标为桌面比例。
  */
 const POKERNOW_SEAT_LAYOUTS = {
-  2: [[0.50, 0.90], [0.50, 0.10]],
-  3: [[0.50, 0.90], [0.14, 0.42], [0.86, 0.42]],
-  4: [[0.50, 0.90], [0.12, 0.50], [0.50, 0.10], [0.88, 0.50]],
-  5: [[0.50, 0.90], [0.14, 0.62], [0.22, 0.18], [0.78, 0.18], [0.86, 0.62]],
+  2: [[0.50, 0.94], [0.50, 0.06]],
+  3: [[0.50, 0.94], [0.02, 0.48], [0.98, 0.48]],
+  4: [[0.50, 0.94], [0.02, 0.50], [0.50, 0.06], [0.98, 0.50]],
+  5: [[0.50, 0.94], [0.02, 0.62], [0.18, 0.10], [0.82, 0.10], [0.98, 0.62]],
   6: [
-    [0.38, 0.90], [0.12, 0.55], [0.22, 0.16],
-    [0.62, 0.10], [0.88, 0.55], [0.78, 0.90]
+    [0.50, 0.94], [0.02, 0.58], [0.22, 0.08],
+    [0.78, 0.08], [0.98, 0.58], [0.78, 0.92]
   ],
   7: [
-    [0.50, 0.90], [0.16, 0.72], [0.10, 0.40], [0.28, 0.12],
-    [0.72, 0.12], [0.90, 0.40], [0.84, 0.72]
+    [0.50, 0.94], [0.16, 0.88], [0.02, 0.50], [0.22, 0.08],
+    [0.78, 0.08], [0.98, 0.50], [0.84, 0.88]
   ],
   8: [
-    [0.38, 0.90], [0.14, 0.70], [0.10, 0.40], [0.22, 0.14],
-    [0.62, 0.10], [0.86, 0.20], [0.90, 0.50], [0.78, 0.90]
+    [0.42, 0.94], [0.12, 0.82], [0.02, 0.48], [0.18, 0.10],
+    [0.58, 0.06], [0.86, 0.14], [0.98, 0.52], [0.82, 0.90]
   ],
   9: [
-    [0.50, 0.90],
-    [0.22, 0.86],
-    [0.08, 0.58],
-    [0.12, 0.28],
-    [0.32, 0.10],
-    [0.68, 0.10],
-    [0.88, 0.28],
-    [0.92, 0.58],
-    [0.78, 0.86]
+    [0.50, 0.94],
+    [0.18, 0.90],
+    [0.02, 0.62],
+    [0.06, 0.28],
+    [0.28, 0.06],
+    [0.72, 0.06],
+    [0.94, 0.28],
+    [0.98, 0.62],
+    [0.82, 0.90]
   ],
   10: [
-    [0.62, 0.89], [0.38, 0.89], [0.17, 0.73], [0.12, 0.47], [0.17, 0.21],
-    [0.38, 0.09], [0.62, 0.09], [0.83, 0.21], [0.90, 0.47], [0.84, 0.73]
+    [0.50, 0.94],
+    [0.28, 0.92],
+    [0.08, 0.78],
+    [0.02, 0.48],
+    [0.12, 0.16],
+    [0.38, 0.05],
+    [0.62, 0.05],
+    [0.88, 0.16],
+    [0.98, 0.48],
+    [0.88, 0.78]
   ]
 };
 
-/** 手机竖屏：底1 + 左列 + 顶1 + 右列（对齐 PokerNow App 几何） */
+/**
+ * 手机竖屏：座位贴桌边（左右 x≈0/1），中间留公共牌通道。
+ * relIndex 0 = 自己（底边，实际由 hero 展示）。
+ */
 const POKERNOW_MOBILE_SEAT_LAYOUTS = {
-  2: [[0.50, 0.90], [0.50, 0.12]],
-  3: [[0.50, 0.90], [0.14, 0.45], [0.86, 0.45]],
-  4: [[0.50, 0.90], [0.14, 0.55], [0.50, 0.12], [0.86, 0.55]],
-  5: [[0.50, 0.90], [0.14, 0.68], [0.14, 0.32], [0.86, 0.32], [0.86, 0.68]],
+  2: [[0.50, 0.93], [0.50, 0.08]],
+  3: [[0.50, 0.93], [0.0, 0.48], [1.0, 0.48]],
+  4: [[0.50, 0.93], [0.0, 0.55], [0.50, 0.08], [1.0, 0.55]],
+  5: [[0.50, 0.93], [0.0, 0.68], [0.0, 0.30], [1.0, 0.30], [1.0, 0.68]],
   6: [
-    [0.50, 0.90], [0.14, 0.70], [0.14, 0.38],
-    [0.50, 0.12], [0.86, 0.38], [0.86, 0.70]
+    [0.50, 0.93], [0.0, 0.70], [0.0, 0.36],
+    [0.50, 0.08], [1.0, 0.36], [1.0, 0.70]
   ],
   7: [
-    [0.50, 0.90], [0.14, 0.74], [0.14, 0.50], [0.14, 0.26],
-    [0.50, 0.12], [0.86, 0.38], [0.86, 0.70]
+    [0.50, 0.93], [0.0, 0.74], [0.0, 0.50], [0.0, 0.26],
+    [0.50, 0.08], [1.0, 0.38], [1.0, 0.70]
   ],
   8: [
-    [0.50, 0.90], [0.14, 0.76], [0.14, 0.54], [0.14, 0.30],
-    [0.50, 0.12], [0.86, 0.30], [0.86, 0.54], [0.86, 0.76]
+    [0.50, 0.93], [0.0, 0.76], [0.0, 0.54], [0.0, 0.30],
+    [0.50, 0.08], [1.0, 0.30], [1.0, 0.54], [1.0, 0.76]
   ],
   9: [
     // 底1 + 左3 + 顶1 + 右3
-    [0.50, 0.91],
-    [0.14, 0.76],
-    [0.14, 0.54],
-    [0.14, 0.30],
-    [0.50, 0.11],
-    [0.86, 0.30],
-    [0.86, 0.50],
-    [0.86, 0.70],
-    [0.86, 0.88]
+    [0.50, 0.93],
+    [0.0, 0.78],
+    [0.0, 0.54],
+    [0.0, 0.30],
+    [0.50, 0.08],
+    [1.0, 0.30],
+    [1.0, 0.50],
+    [1.0, 0.70],
+    [1.0, 0.86]
   ],
   10: [
-    // 底1 + 左4 + 顶1 + 右4（PokerNow 手机实测）
-    [0.50, 0.92],
-    [0.14, 0.80],
-    [0.14, 0.64],
-    [0.14, 0.40],
-    [0.14, 0.24],
-    [0.50, 0.11],
-    [0.86, 0.24],
-    [0.86, 0.40],
-    [0.86, 0.64],
-    [0.86, 0.80]
+    // 底1 + 左4 + 顶1 + 右4
+    [0.50, 0.93],
+    [0.0, 0.82],
+    [0.0, 0.64],
+    [0.0, 0.42],
+    [0.0, 0.24],
+    [0.50, 0.08],
+    [1.0, 0.24],
+    [1.0, 0.42],
+    [1.0, 0.64],
+    [1.0, 0.82]
   ]
 };
 
@@ -1517,12 +1528,19 @@ function seatPointFromPokernow(relIndex, maxPlayers, w, h, isMobile = false) {
   const layout = layouts[maxPlayers] || POKERNOW_SEAT_LAYOUTS[maxPlayers];
   if (!layout || !layout[relIndex]) return null;
   const [fx, fy] = layout[relIndex];
-  const x = fx * w;
-  const y = fy * h;
+  // 桌缘比例点 → 再沿法向外推，名牌落在毡面外侧（PokerNow）
   let nx = fx - 0.5;
   let ny = fy - 0.5;
   const len = Math.hypot(nx, ny) || 1;
-  return { x, y, nx: nx / len, ny: ny / len };
+  nx /= len;
+  ny /= len;
+  // 轻微外推即可；过大易把座位/按钮挤歪、叠出可视区
+  const rimOut = isMobile
+    ? Math.min(w, h) * (relIndex === 0 ? 0 : 0.03)
+    : Math.min(w, h) * (relIndex === 0 ? 0 : 0.06);
+  const x = fx * w + nx * rimOut;
+  const y = fy * h + ny * rimOut;
+  return { x, y, nx, ny };
 }
 
 /**
@@ -1702,9 +1720,10 @@ function renderTable() {
   const positionMap = computePositionMap(currentRoom);
   const meForSeat = currentRoom.players.find(p => p.id === mySocketId);
   const anchorSeat = (meForSeat?.seatIndex ?? 0);
-  const seatHalfW = isMobileLayout ? 50 : 64;
-  const seatHalfH = isMobileLayout ? 28 : 26;
-  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:pn-v2`;
+  // 座位锚在桌外缘；半宽用于居中定位
+  const seatHalfW = isMobileLayout ? 36 : 50;
+  const seatHalfH = isMobileLayout ? 22 : 26;
+  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:pn-v6`;
   const layoutChanged = seatsContainer.dataset.layoutKey !== layoutKey;
   if (layoutChanged) {
     seatsContainer.dataset.layoutKey = layoutKey;
@@ -1859,8 +1878,13 @@ function renderTable() {
       startBtn.style.display = 'inline-block';
       waitingText.style.display = 'none';
       const activePlayers = currentRoom.players.filter(p => {
-        if (p.hasRebought) return true;
-        return !p.isSittingOut && p.chips > 0;
+        if ((p.chips || 0) <= 0) return false;
+        // 中途入座 / 待补码 / 断线占座都算可开局人数
+        if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0) return true;
+        if (p.disconnected) return true;
+        // 仅主动暂离不算
+        if (p.wantSitOut && p.isSittingOut) return false;
+        return !p.isSittingOut;
       });
       const approvedSpectators = (currentRoom.spectators || []).filter(s => s.joinApproved).length;
       const totalPotential = activePlayers.length + approvedSpectators;
@@ -1923,10 +1947,10 @@ function renderTable() {
       if (currentRoom.gameState.status === 'playing' && currentRoom.gameState.bettingRound !== 'showdown') {
         const currentPlayer = currentRoom.players.find(p => p.seatIndex === currentRoom.gameState.currentPlayerIndex);
         actionStatus.innerText = currentPlayer ? `等待 ${currentPlayer.name} 行动…` : '';
-      } else if (currentRoom.gameState.bettingRound === 'showdown') {
-        actionStatus.innerText = '本手结束 — 等待下一手…';
       } else if (isWaitingLobby) {
         actionStatus.innerText = '分享房间号，喊朋友上车';
+      } else if (currentRoom.gameState.bettingRound === 'showdown') {
+        actionStatus.innerText = '本手结束 — 等待下一手…';
       } else {
         actionStatus.innerText = '';
       }

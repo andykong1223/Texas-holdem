@@ -425,15 +425,13 @@ function parkPlayer(room, socketId, { expectReconnect = true } = {}) {
   return player;
 }
 
-/** 回桌后若人数够且牌局停在等待/摊牌，自动续开 */
+/** 回桌 / 新玩家入座后：人数够则续开或重新进入可开局态 */
 function tryResumeHandIfNeeded(room) {
   if (!room || room._settling || room.pendingSettle) return;
-  const eligible = Array.from(room.players.values()).filter(
-    p => p.chips > 0 && !p.isSittingOut
-  );
-  if (eligible.length < 2) return;
+  if (countPotentialNextHandPlayers(room) < 2) return;
   if (room.gameState.status === 'waiting') {
-    startGame(room);
+    // 人数已够：清掉误暂离，由房主点「开始」；不强制自动开局
+    activateSeatedForLobby(room);
     broadcastState(room);
     return;
   }
@@ -783,9 +781,10 @@ function applyIdleAndSitOutRules(room) {
   for (const [sid, p] of room.players.entries()) {
     if (p.actedVoluntarilyThisHand) {
       p.idleHands = 0;
-    } else if (p.hadDecisionThisHand) {
+    } else if (p.hadDecisionThisHand && !p.disconnected) {
+      // 断线代打不计入「未操作暂离」
       p.idleHands = (p.idleHands || 0) + 1;
-    } else if (p.isSittingOut && p.chips > 0 && !p.pendingJoin) {
+    } else if (p.isSittingOut && p.chips > 0 && !p.pendingJoin && !p.disconnected) {
       // 已暂离且仍占座：每过一手继续累计，满 5 手离座（中途待入局不算）
       p.idleHands = (p.idleHands || 0) + 1;
     }
@@ -988,11 +987,12 @@ function processJoinQueue(room) {
 }
 
 function startGame(room) {
-  if (room.players.size < 2) return;
+  activateSeatedForLobby(room);
   // 仅允许从等待开局；禁止下注中重入导致吞池
   if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
     return;
   }
+  if (countPotentialNextHandPlayers(room) < 2) return;
   room.gameState.status = 'playing';
   // 首手由 startHand 选最小座位为庄，此处不预置再 +1
   if (room.gameState.dealerIndex === -1 ||
@@ -1031,6 +1031,8 @@ function startHand(room) {
     return;
   }
 
+  activateSeatedForLobby(room);
+
   room._handSettled = false;
   clearAllInRunout(room);
   clearTurnTimer(room);
@@ -1064,7 +1066,7 @@ function startHand(room) {
     p.handStartChips = p.chips;
   });
   
-  // 断线但仍 expectReconnect 的玩家照常发牌，超时自动行动（避免二人桌一人断线就停局）
+  // 断线占座照常发牌（超时自动行动）；仅主动暂离的不发
   const activePlayers = Array.from(room.players.values())
     .filter(p => p.chips > 0 && !p.isSittingOut);
   
@@ -1822,11 +1824,59 @@ function endHand(room) {
 /** 一手结束到下一手开局的间隔（看清公共牌 / 赢牌结果 / 可选秀牌） */
 const AUTO_NEXT_HAND_MS = 6500;
 
+/** 把仍可入局的 away 占座拉回 players（offline 键），避免「桌上看得见却开不了局」 */
+function reviveAwayPlayersForHand(room) {
+  for (const [userId, p] of [...room.awayPlayers.entries()]) {
+    if (!p || (p.chips || 0) <= 0) continue;
+    // 主动离开且不预期回连：不自动拉回
+    if (!p.expectReconnect && p.sitOutAfterHand) continue;
+    const key = `offline:${userId}`;
+    if (room.players.has(key)) {
+      room.awayPlayers.delete(userId);
+      continue;
+    }
+    // 座位被占则跳过
+    const seatTaken = Array.from(room.players.values()).some(x => x.seatIndex === p.seatIndex);
+    if (seatTaken) continue;
+    p.id = key;
+    p.disconnected = true;
+    p.expectReconnect = true;
+    // 短断线占座不应一直卡在暂离
+    p.isSittingOut = false;
+    room.awayPlayers.delete(userId);
+    room.players.set(key, p);
+  }
+}
+
+/** 等待开局 / 房主开局前：解除误暂离，保留主动暂离(wantSitOut) */
+function activateSeatedForLobby(room) {
+  reviveAwayPlayersForHand(room);
+  processJoinQueue(room);
+  room.players.forEach(p => {
+    if ((p.chips || 0) <= 0) return;
+    if (p.wantSitOut) return;
+    p.isSittingOut = false;
+    p.pendingJoin = false;
+    p.idleHands = 0;
+  });
+}
+
 function countPotentialNextHandPlayers(room) {
+  reviveAwayPlayersForHand(room);
   let n = 0;
   room.players.forEach(p => {
-    if (p.chips <= 0) return;
-    if (p.hasRebought || p.pendingJoin || !p.isSittingOut) n++;
+    if ((p.chips || 0) <= 0) return;
+    if (p.wantSitOut && p.isSittingOut && !p.pendingJoin && !p.hasRebought) return;
+    if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0 || !p.isSittingOut || p.disconnected) {
+      n++;
+    }
+  });
+  // 尚未 revive 成功的 away（座位冲突等）仍算可入局，避免 UI/逻辑不一致
+  room.awayPlayers.forEach(p => {
+    if ((p.chips || 0) <= 0) return;
+    if (!p.expectReconnect && p.sitOutAfterHand) return;
+    if (p.wantSitOut && p.isSittingOut) return;
+    n++;
   });
   n += room.joinQueue.length;
   return n;
@@ -1855,6 +1905,8 @@ function scheduleNextHand(room, delayMs = AUTO_NEXT_HAND_MS) {
     return;
   }
 
+  // 先解除误暂离再计数，避免「两人在座却判不足」
+  activateSeatedForLobby(room);
   if (countPotentialNextHandPlayers(room) < 2) {
     room.gameState.status = 'waiting';
     broadcastState(room);
@@ -2024,9 +2076,8 @@ io.on('connection', (socket) => {
     socket.emit('joined-room', room.getPublicState(socket.id));
     socket.emit('wallet-update', { chips: db.getUserById(fresh.id).chips });
     broadcastState(room);
-    // 若正好在摊牌等待下一手，确保会被算进下一手人数
-    if (!inBetting && room.gameState.status === 'playing'
-      && room.gameState.bettingRound === 'showdown') {
+    // 等待开局 / 摊牌间隙：立刻重算人数，避免「看得见人却开不了局」
+    if (!inBetting) {
       tryResumeHandIfNeeded(room);
     }
   });

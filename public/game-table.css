@@ -18,6 +18,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: visible;
 }
 
 #screen-game #top-bar {
@@ -50,14 +51,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 8px 120px;
-  overflow: hidden;
+  /* 四周给桌外座位，桌面本身保持大 */
+  padding: 64px 110px 148px;
+  overflow: visible;
 }
 
-/* 横向椭圆桌 */
+/* 横向椭圆桌：桌面够大，座位挂在毡面外侧 */
 #screen-game #poker-table {
-  --table-w: min(94vw, 1040px);
-  --table-h: min(58dvh, calc(var(--table-w) * 0.52), 520px);
+  --table-w: min(88vw, 1080px);
+  --table-h: min(56dvh, calc(var(--table-w) * 0.5), 540px);
   width: var(--table-w);
   height: var(--table-h);
   max-width: none;
@@ -73,6 +75,10 @@
     inset 0 0 70px rgba(0,0,0,0.35);
   flex-shrink: 0;
   position: relative;
+  overflow: visible;
+}
+#screen-game #seats-container {
+  overflow: visible;
 }
 #screen-game .felt-inner {
   inset: 12px;
@@ -83,21 +89,23 @@
   content: "No Limit Texas Hold'em";
   position: absolute;
   left: 50%;
-  top: 54%;
+  top: 58%;
   transform: translate(-50%, -50%);
-  font-size: clamp(0.7rem, 2vw, 1.05rem);
+  font-size: clamp(0.7rem, 1.6vw, 0.95rem);
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.16);
   pointer-events: none;
   white-space: nowrap;
   z-index: 1;
 }
 
 #screen-game #board-center {
-  top: 38%;
-  z-index: 12;
+  top: 40%;
+  z-index: 20;
   gap: 10px;
+  width: min(70%, 420px);
+  pointer-events: none;
 }
 #screen-game #pot-display {
   background: #2a2a2a;
@@ -126,10 +134,10 @@
   top: 62%;
 }
 
-/* —— 对手座位：白名牌 + 牌背压在名牌上方（PokerNow） —— */
+/* —— 对手座位：贴桌边名牌 + 牌背（PokerNow） —— */
 #screen-game .seat {
-  width: 118px;
-  min-height: 44px;
+  width: 96px;
+  min-height: 40px;
   height: auto;
   padding: 0;
   gap: 0;
@@ -143,22 +151,30 @@
   transition: opacity 0.15s;
 }
 #screen-game .seat.empty {
-  opacity: 0.75;
-  width: 100px;
-  min-height: 44px;
-  padding: 8px;
+  opacity: 0.8;
+  width: 72px;
+  min-height: 38px;
+  padding: 5px 4px;
   justify-content: center;
   align-items: center;
-  background: rgba(28, 28, 28, 0.55);
-  border: 1px dashed rgba(255,255,255,0.35);
-  border-radius: 6px;
+  background: transparent;
+  border: 1.5px dashed rgba(255,255,255,0.28);
+  border-radius: 5px;
 }
 #screen-game .seat.empty .seat-info { display: none; }
-#screen-game .seat.empty .seat-sit {
-  color: rgba(255,255,255,0.55);
-  font-size: 0.85rem;
+#screen-game .seat.empty .seat-num {
+  display: block;
+  position: static;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.38);
+  margin-bottom: 1px;
+}
+#screen-game .seat.empty .seat-sit {
+  color: rgba(255,255,255,0.42);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 #screen-game .seat-num { display: none; }
@@ -173,17 +189,17 @@
   gap: 1px;
   min-width: 0;
   max-width: none;
-  margin-top: 22px;
-  padding: 8px 10px 10px;
-  background: rgba(36, 36, 36, 0.92);
+  margin-top: 18px;
+  padding: 6px 8px 8px;
+  background: rgba(28, 28, 28, 0.94);
   border: none;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  border-radius: 7px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
   text-align: left;
   transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 #screen-game .seat-name {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: #f2f2f2;
   overflow: hidden;
@@ -192,7 +208,7 @@
   transition: color 0.18s ease;
 }
 #screen-game .seat-chips {
-  font-size: 0.88rem;
+  font-size: 0.8rem;
   font-weight: 800;
   color: #eee;
   transition: color 0.18s ease;
@@ -1019,82 +1035,197 @@
 }
 
 
-/* ========== 手机：竖向跑道桌（PokerNow App 几何） ========== */
+/* ========== PC 宽屏：操作区右下（PokerNow），桌心更干净 ========== */
+@media (min-width: 901px) {
+  #screen-game #action-bar.in-hand {
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(440px, 40vw);
+    background: transparent;
+    padding: 0;
+    gap: 8px;
+  }
+  /* 等待开局：邀请条全宽贴底，避免卡在右下角显得「歪」 */
+  #screen-game #action-bar:not(.in-hand) {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    padding: 8px 24px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,0.85) 40%);
+  }
+  #screen-game #action-bar .waiting-actions {
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+  #screen-game #action-bar .waiting-actions .act-btn {
+    width: 100%;
+  }
+  #screen-game #action-bar .actions-row {
+    width: 100%;
+  }
+  #screen-game #action-bar .raise-panel {
+    width: 100%;
+  }
+  #screen-game #hero-zone {
+    bottom: 28px;
+    align-items: center;
+  }
+  #screen-game #table-container:has(#action-bar.my-turn) #hero-zone,
+  #screen-game #table-container:has(#action-bar.raise-open) #hero-zone {
+    bottom: 28px;
+  }
+  #screen-game .hero-side-tools {
+    left: max(20px, env(safe-area-inset-left));
+  }
+  #screen-game #community-cards .card {
+    width: 54px;
+    height: 76px;
+  }
+  #screen-game .seat-cards .card {
+    width: 28px;
+    height: 40px;
+  }
+  #screen-game .seat-cards.revealed .card {
+    width: 32px;
+    height: 46px;
+  }
+}
+
+/* ========== 手机：竖向跑道桌（PokerNow：座位贴边 + 中间留道） ========== */
 @media (max-width: 900px) {
   #screen-game #table-stage {
-    padding: 44px 0 118px;
+    /* 座位贴毡缘，适度留白即可 */
+    padding: 52px 28px 128px;
     align-items: center;
     justify-content: center;
+    overflow: visible;
   }
 
-  /* 竖向胶囊桌：窄而高，铺满中间区域 */
+  /* 竖向胶囊桌：略加宽，中间通道够放 5 张公共牌 */
   #screen-game #poker-table {
-    --table-w: min(78vw, 340px);
-    --table-h: min(68dvh, 560px, calc(100dvh - 200px));
+    --table-w: min(78vw, 320px);
+    --table-h: min(64dvh, 520px, calc(100dvh - 200px));
     width: var(--table-w);
     height: var(--table-h);
     border-radius: 9999px;
-    border-width: 10px;
+    border-width: 9px;
+    overflow: visible;
+  }
+  #screen-game #seats-container {
+    overflow: visible;
   }
   #screen-game .felt-inner {
     border-radius: 9999px;
     inset: 10px;
   }
   #screen-game #poker-table::after {
-    top: 58%;
-    font-size: 0.72rem;
+    top: 62%;
+    font-size: 0.68rem;
     letter-spacing: 0.04em;
     white-space: normal;
     text-align: center;
-    max-width: 70%;
+    max-width: 56%;
     line-height: 1.3;
+    z-index: 1;
   }
 
+  /* 公共牌区抬高层级，保证不被侧座挡住 */
   #screen-game #board-center {
-    top: 42%;
-    gap: 8px;
+    top: 40%;
+    gap: 6px;
+    z-index: 20;
+    width: min(92%, 220px);
+    pointer-events: none;
+  }
+  #screen-game #community-cards {
+    min-height: 48px;
+    gap: 4px;
+    justify-content: center;
   }
   #screen-game #community-cards .card {
-    width: 40px;
-    height: 56px;
+    width: 36px;
+    height: 50px;
   }
+  #screen-game #community-cards .card-rank { font-size: 1.05rem; }
+  #screen-game #community-cards .card-suit-center { font-size: 0.95rem; }
   #screen-game #pot-display {
-    font-size: 0.85rem;
-    padding: 5px 14px;
+    font-size: 0.78rem;
+    padding: 4px 12px;
+    z-index: 21;
   }
 
-  /* 座位：贴在竖桌两侧的矩形框 */
+  /* 座位：窄名牌贴桌边，默认低于公共牌 */
   #screen-game .seat {
-    width: 100px;
-    min-height: 52px;
-    padding: 6px 8px;
+    width: 72px;
+    min-height: 40px;
+    padding: 0;
+    z-index: 8;
   }
   #screen-game .seat.empty {
-    width: 88px;
-    min-height: 48px;
+    width: 56px;
+    min-height: 36px;
+    padding: 4px 2px;
+    background: transparent;
+    border: 1.5px dashed rgba(255,255,255,0.28);
+    border-radius: 4px;
+    opacity: 0.85;
+  }
+  #screen-game .seat.empty .seat-num {
+    display: block;
+    position: static;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 0.04em;
+    margin-bottom: 1px;
   }
   #screen-game .seat-sit {
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.4);
   }
-  #screen-game .seat { width: 108px; }
-  #screen-game .seat-info { margin-top: 20px; padding: 7px 8px 9px; }
-  #screen-game .seat-name { font-size: 0.7rem; }
-  #screen-game .seat-chips { font-size: 0.8rem; }
+  #screen-game .seat-info {
+    margin-top: 14px;
+    padding: 5px 6px 6px;
+    border-radius: 6px;
+  }
+  #screen-game .seat-name { font-size: 0.62rem; }
+  #screen-game .seat-chips { font-size: 0.72rem; }
+  #screen-game .seat-cards {
+    top: -2px;
+  }
   #screen-game .seat-cards .card {
-    width: 30px;
-    height: 42px;
+    width: 24px;
+    height: 34px;
   }
-  #screen-game .seat-cards .card:first-child { margin-right: -8px; }
+  #screen-game .seat-cards .card:first-child { margin-right: -6px; }
   #screen-game .seat-cards.revealed .card {
-    width: 34px;
-    height: 48px;
+    width: 28px;
+    height: 40px;
+  }
+  #screen-game .seat-status-tag {
+    font-size: 0.55rem;
+    padding: 1px 4px;
+  }
+
+  /* 等待开局提示：缩小，避免盖住桌心通道 */
+  #screen-game .start-overlay {
+    width: min(72%, 168px);
+    padding: 10px 12px;
+  }
+  #screen-game .start-overlay .waiting-text,
+  #screen-game .start-overlay p {
+    font-size: 0.78rem;
   }
 
   /* 自己手牌：桌底上方 */
   #screen-game #hero-zone {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
     gap: 4px;
+    z-index: 24;
   }
   #screen-game #table-container:has(#action-bar.my-turn) #hero-zone {
     bottom: calc(64px + env(safe-area-inset-bottom, 0px));
@@ -1138,21 +1269,30 @@
 }
 
 @media (max-width: 380px) {
+  #screen-game #table-stage {
+    padding-left: 34px;
+    padding-right: 34px;
+  }
   #screen-game #poker-table {
-    --table-w: min(82vw, 300px);
-    --table-h: min(64dvh, 480px);
+    --table-w: min(68vw, 260px);
+    --table-h: min(62dvh, 460px);
     border-width: 8px;
   }
-  #screen-game .seat {
-    width: 88px;
-    min-height: 46px;
+  #screen-game .seat { width: 64px; min-height: 36px; }
+  #screen-game .seat.empty { width: 48px; min-height: 32px; }
+  #screen-game #board-center { width: min(94%, 200px); }
+  #screen-game #community-cards .card {
+    width: 32px;
+    height: 46px;
   }
-  #screen-game .seat.empty { width: 78px; }
   #screen-game #hero-cards .card {
-    width: 56px;
-    height: 80px;
+    width: 52px;
+    height: 74px;
   }
-  #screen-game #hero-cards .card-rank { font-size: 1.4rem; }
+  #screen-game #hero-cards .card-rank { font-size: 1.3rem; }
+  #screen-game .hero-board {
+    width: min(136px, 40vw);
+  }
   #screen-game .hero-board .turn-indicator {
     right: auto;
     left: 50%;
