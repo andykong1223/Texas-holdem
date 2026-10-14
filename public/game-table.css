@@ -78,7 +78,14 @@
   overflow: visible;
 }
 #screen-game #seats-container {
+  position: absolute;
+  inset: 0;
   overflow: visible;
+  pointer-events: none;
+  z-index: 8;
+}
+#screen-game #seats-container .seat {
+  pointer-events: auto;
 }
 #screen-game .felt-inner {
   inset: 12px;
@@ -1115,6 +1122,8 @@
     overflow: visible;
   }
   #screen-game #seats-container {
+    position: absolute;
+    inset: 0;
     overflow: visible;
   }
   #screen-game .felt-inner {
@@ -1122,12 +1131,15 @@
     inset: 10px;
   }
   #screen-game #poker-table::after {
+    left: 50%;
     top: 62%;
+    transform: translate(-50%, -50%);
     font-size: 0.68rem;
     letter-spacing: 0.04em;
     white-space: normal;
     text-align: center;
     max-width: 56%;
+    width: max-content;
     line-height: 1.3;
     z-index: 1;
   }
@@ -1211,10 +1223,17 @@
     padding: 1px 4px;
   }
 
-  /* 等待开局提示：缩小，避免盖住桌心通道 */
+  /* 等待开局提示：桌内 flex 居中，避免窄屏偏移 */
   #screen-game .start-overlay {
-    width: min(72%, 168px);
-    padding: 10px 12px;
+    inset: 0;
+    width: auto;
+    padding: 0;
+    transform: none;
+  }
+  #screen-game .start-overlay .btn-start {
+    font-size: 0.95rem;
+    padding: 12px 22px;
+    max-width: min(70%, 200px);
   }
   #screen-game .start-overlay .waiting-text,
   #screen-game .start-overlay p {

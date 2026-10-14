@@ -557,12 +557,18 @@ input[type="checkbox"] { width: auto; }
 
 .start-overlay {
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   z-index: 30;
+  pointer-events: none;
+  transform: none;
 }
 .start-overlay.hidden { display: none; }
+.start-overlay > * { pointer-events: auto; }
 .btn-start {
   background: linear-gradient(180deg, #4ad487, #2f9e5f);
   font-size: 1.15rem;
@@ -570,6 +576,7 @@ input[type="checkbox"] { width: auto; }
   border-radius: 999px;
   box-shadow: 0 8px 24px rgba(47, 158, 95, 0.35);
   animation: pulse 2s infinite;
+  max-width: min(88%, 280px);
 }
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(74, 212, 135, 0.45); }
@@ -579,10 +586,15 @@ input[type="checkbox"] { width: auto; }
 .next-hand-text { color: #ffe08a; font-size: 1.15rem; font-weight: 700; margin-bottom: 8px; }
 .next-hand-overlay {
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   z-index: 40;
+  transform: none;
+  pointer-events: none;
 }
+.next-hand-overlay > * { pointer-events: auto; }
 .next-hand-overlay.hidden { display: none; }
 .next-hand-box {
   background: rgba(8, 14, 12, 0.92);
