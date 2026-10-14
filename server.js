@@ -182,6 +182,9 @@ function serializePlayer(p) {
     hasRebought: !!p.hasRebought,
     handStartChips: p.handStartChips,
     sessionBuyIn: p.sessionBuyIn || 0,
+    idleHands: p.idleHands || 0,
+    wantSitOut: !!p.wantSitOut,
+    wantLeaveSeat: !!p.wantLeaveSeat,
     disconnected: true,
     expectReconnect: true
   };
@@ -252,6 +255,9 @@ function hydratePlayer(data) {
   p.hasRebought = !!data.hasRebought;
   p.handStartChips = data.handStartChips ?? data.chips;
   p.sessionBuyIn = data.sessionBuyIn || data.chips || 0;
+  p.idleHands = data.idleHands || 0;
+  p.wantSitOut = !!data.wantSitOut;
+  p.wantLeaveSeat = !!data.wantLeaveSeat;
   p.disconnected = true;
   p.expectReconnect = true;
   return p;
@@ -508,6 +514,11 @@ function onSessionTimeout(room) {
   settleSession(room, 'timeout');
 }
 
+/** 连续未主动操作手数：达此值留位暂离 */
+const IDLE_SIT_OUT_HANDS = 2;
+/** 连续未主动操作手数：达此值离开座位（筹码回账户，变观战） */
+const IDLE_LEAVE_SEAT_HANDS = 5;
+
 class Player {
   constructor(id, name, chips, seatIndex, userId = null) {
     this.id = id;
@@ -529,6 +540,12 @@ class Player {
     this.sessionBuyIn = chips; // 本场累计买入
     this.expectReconnect = false;
     this.sitOutAfterHand = false;
+    this.shownHoleMask = [false, false]; // 摊牌阶段对外秀出的牌位
+    this.idleHands = 0; // 连续无主动操作手数
+    this.actedVoluntarilyThisHand = false;
+    this.hadDecisionThisHand = false;
+    this.wantSitOut = false; // 本手结束后暂离
+    this.wantLeaveSeat = false; // 本手结束后离座
   }
   
   resetForHand() {
@@ -538,6 +555,9 @@ class Player {
     this.folded = false;
     this.allIn = false;
     this.hasActed = false;
+    this.shownHoleMask = [false, false];
+    this.actedVoluntarilyThisHand = false;
+    this.hadDecisionThisHand = false;
   }
 }
 
@@ -590,9 +610,17 @@ class Room {
   getPublicState(requestingSocketId = null) {
     const isSpectator = this.spectators.has(requestingSocketId);
     const mapPlayer = (p, disconnected) => {
-      let revealCards = false;
-      if (this.gameState.bettingRound === 'showdown' && !p.folded) revealCards = true;
-      if (p.id === requestingSocketId) revealCards = true;
+      const mask = Array.isArray(p.shownHoleMask) ? p.shownHoleMask : [false, false];
+      const isSelf = p.id === requestingSocketId;
+      const isShowdown = this.gameState.bettingRound === 'showdown';
+      let holeCards = [];
+      if (isSelf) {
+        // 自己始终能看到完整底牌（含已弃牌）
+        holeCards = [...(p.holeCards || [])];
+      } else if (isShowdown && (p.holeCards || []).length > 0) {
+        // 摊牌：按秀牌掩码对外露出；未秀出的位置用 null（前端可画牌背）
+        holeCards = (p.holeCards || []).map((c, i) => (mask[i] ? c : null));
+      }
       return {
         id: p.id,
         userId: p.userId,
@@ -601,13 +629,16 @@ class Room {
         chips: p.chips,
         seatIndex: p.seatIndex,
         isSittingOut: p.isSittingOut,
+        wantSitOut: !!p.wantSitOut,
         hasRebought: p.hasRebought,
         folded: p.folded,
         allIn: p.allIn,
         currentBet: p.currentBet,
-        holeCards: revealCards ? p.holeCards : [],
+        holeCards,
+        shownHoleMask: [...mask],
         isHost: this.hostUserId != null && p.userId === this.hostUserId,
-        disconnected: !!disconnected
+        disconnected: !!disconnected,
+        idleHands: p.idleHands || 0
       };
     };
     const players = [
@@ -667,6 +698,116 @@ class Room {
 
 function isLiveSocketId(sid) {
   return sid && !String(sid).startsWith('offline:');
+}
+
+function findLiveSocketIdByUserId(userId) {
+  if (!userId) return null;
+  for (const [id, s] of io.of('/').sockets) {
+    if (s.data.user?.id === userId) return id;
+  }
+  return null;
+}
+
+function transferHostIfNeeded(room, leavingPlayer) {
+  if (!leavingPlayer?.userId || leavingPlayer.userId !== room.hostUserId) return;
+  const remaining = Array.from(room.players.values()).filter(p => p !== leavingPlayer);
+  const activeHost = remaining.find(p => !p.isSittingOut && p.chips > 0 && !p.disconnected);
+  const next = activeHost || remaining[0];
+  if (next) {
+    room.hostId = next.id;
+    room.hostUserId = next.userId || room.hostUserId;
+  }
+}
+
+/**
+ * 离开座位：筹码回账户，变为观战（释放座位）。
+ * 宜在两手之间调用；若仍在本手内，先标记 wantLeaveSeat，于 endHand 处理。
+ */
+function forceLeaveSeat(room, playerKey, reason = 'leave') {
+  const player = room.players.get(playerKey);
+  if (!player) return false;
+
+  recordLedgerEntry(room, player);
+  settlePlayerToAccount(player);
+  transferHostIfNeeded(room, player);
+
+  room.rebuyRequests.delete(playerKey);
+  room.players.delete(playerKey);
+  if (player.userId) room.awayPlayers.delete(player.userId);
+
+  const notifySid = isLiveSocketId(playerKey)
+    ? playerKey
+    : findLiveSocketIdByUserId(player.userId);
+
+  if (notifySid) {
+    room.spectators.add(notifySid);
+    room.spectatorNames.set(notifySid, player.name);
+    if (player.userId) room.spectatorUserIds.set(notifySid, player.userId);
+    const msg = reason === 'idle'
+      ? `连续 ${IDLE_LEAVE_SEAT_HANDS} 手未操作，已自动离开座位`
+      : '你已离开座位';
+    io.to(notifySid).emit('set-spectator', true);
+    io.to(notifySid).emit('forced-leave-seat', { reason, message: msg });
+    const wallet = player.userId ? db.getUserById(player.userId)?.chips : null;
+    if (wallet != null) io.to(notifySid).emit('wallet-update', { chips: wallet });
+  }
+
+  if (room.players.size === 0 && room.awayPlayers.size === 0 && room.spectators.size === 0) {
+    destroyRoom(room);
+    return true;
+  }
+  return true;
+}
+
+/** 一手结束后：统计空闲手数，自动暂离 / 离座；处理手动暂离与离座请求 */
+function applyIdleAndSitOutRules(room) {
+  const leaveKeys = [];
+
+  for (const [sid, p] of room.players.entries()) {
+    if (p.actedVoluntarilyThisHand) {
+      p.idleHands = 0;
+    } else if (p.hadDecisionThisHand) {
+      p.idleHands = (p.idleHands || 0) + 1;
+    } else if (p.isSittingOut && p.chips > 0) {
+      // 已暂离且仍占座：每过一手继续累计，满 5 手离座
+      p.idleHands = (p.idleHands || 0) + 1;
+    }
+
+    if (p.wantSitOut) {
+      p.isSittingOut = true;
+      p.wantSitOut = false;
+    }
+
+    if (p.wantLeaveSeat || (p.idleHands || 0) >= IDLE_LEAVE_SEAT_HANDS) {
+      leaveKeys.push(sid);
+      continue;
+    }
+
+    if ((p.idleHands || 0) >= IDLE_SIT_OUT_HANDS && !p.isSittingOut && p.chips > 0) {
+      p.isSittingOut = true;
+      if (isLiveSocketId(sid)) {
+        io.to(sid).emit('auto-sit-out', {
+          idleHands: p.idleHands,
+          message: `连续 ${IDLE_SIT_OUT_HANDS} 手未操作，已自动暂离（留位）`
+        });
+      } else if (p.userId) {
+        const live = findLiveSocketIdByUserId(p.userId);
+        if (live) {
+          io.to(live).emit('auto-sit-out', {
+            idleHands: p.idleHands,
+            message: `连续 ${IDLE_SIT_OUT_HANDS} 手未操作，已自动暂离（留位）`
+          });
+        }
+      }
+    }
+  }
+
+  for (const key of leaveKeys) {
+    const p = room.players.get(key);
+    const reason = p?.wantLeaveSeat ? 'leave' : 'idle';
+    if (p) p.wantLeaveSeat = false;
+    forceLeaveSeat(room, key, reason);
+  }
 }
 
 function broadcastState(room) {
@@ -1044,12 +1185,21 @@ function sanitizeHandLogForViewer(log, viewerUserId) {
     potTotal: log.potTotal || 0,
     results: log.results || [],
     players: (log.players || []).map(p => {
-      const canSee = (viewerUserId && p.userId === viewerUserId) || p.showed;
+      const isMe = !!(viewerUserId && p.userId === viewerUserId);
+      const mask = Array.isArray(p.shownHoleMask) ? p.shownHoleMask : null;
+      let holeCards = [];
+      if (isMe || p.showed) {
+        if (mask && !isMe) {
+          holeCards = (p.holeCards || []).map((c, i) => (mask[i] ? c : null));
+        } else {
+          holeCards = p.holeCards || [];
+        }
+      }
       return {
         userId: p.userId,
         name: p.name,
         seatIndex: p.seatIndex,
-        holeCards: canSee ? (p.holeCards || []) : [],
+        holeCards,
         showed: !!p.showed,
         folded: !!p.folded,
         startChips: p.startChips,
@@ -1078,13 +1228,14 @@ function autoActOnTimeout(room) {
   if (!cur) return;
   if (room.gameState.status !== 'playing' || room.gameState.bettingRound === 'showdown') return;
   const canCheck = cur.currentBet >= (room.gameState.currentBet || 0);
-  processAction(cur.id, canCheck ? 'check' : 'fold', 0);
+  processAction(cur.id, canCheck ? 'check' : 'fold', 0, { auto: true });
 }
 
 function startTurnTimer(room) {
   clearTurnTimer(room);
   const player = getCurrentPlayer(room);
   if (!player) return;
+  player.hadDecisionThisHand = true;
   if (!room.settings.timerEnabled) {
     room.gameState.timerEnd = 0;
     emitTurnTimer(room, player);
@@ -1138,7 +1289,7 @@ function getCurrentPlayer(room) {
   return Array.from(room.players.values()).find(p => p.seatIndex === room.gameState.currentPlayerIndex && !p.folded && !p.allIn);
 }
 
-function processAction(playerId, action, amount) {
+function processAction(playerId, action, amount, opts = {}) {
   const room = Array.from(rooms.values()).find(r => r.players.has(playerId));
   if (!room) return;
   const player = room.players.get(playerId);
@@ -1152,6 +1303,10 @@ function processAction(playerId, action, amount) {
     return;
   }
   clearTurnTimer(room);
+  if (!opts.auto) {
+    player.actedVoluntarilyThisHand = true;
+    player.idleHands = 0;
+  }
   if (action === 'fold') {
     player.folded = true;
     player.hasActed = true;
@@ -1363,6 +1518,14 @@ function endHand(room) {
   clearTurnTimer(room);
   clearAllInRunout(room);
   room.gameState.bettingRound = 'showdown';
+  // 一直在池里（未弃牌）的玩家默认自动秀两张；弃牌者可选手动秀
+  for (const p of room.players.values()) {
+    if ((p.holeCards || []).length >= 2 && !p.folded) {
+      p.shownHoleMask = [true, true];
+    } else {
+      p.shownHoleMask = [false, false];
+    }
+  }
   const pots = calculatePots(Array.from(room.players.values()));
   const activePlayers = Array.from(room.players.values()).filter(p => !p.folded);
   const results = [];
@@ -1375,8 +1538,14 @@ function endHand(room) {
         const share = Math.floor(pot.amount / lastWinners.length);
         let remainder = pot.amount - share * lastWinners.length;
         lastWinners.forEach(w => {
-          w.player.chips += share + (remainder-- > 0 ? 1 : 0);
-          results.push({ playerId: w.player.id, amount: share, hand: 'Uncontested Side Pot' });
+          const amt = share + (remainder-- > 0 ? 1 : 0);
+          w.player.chips += amt;
+          results.push({
+            playerId: w.player.id,
+            playerName: w.player.name,
+            amount: amt,
+            hand: 'Uncontested Side Pot'
+          });
         });
       } else {
         const contributors = Array.from(room.players.values()).filter(p => p.totalBet > 0);
@@ -1393,7 +1562,12 @@ function endHand(room) {
     if (eligiblePlayers.length === 1) {
       const w = eligiblePlayers[0];
       w.chips += pot.amount;
-      results.push({ playerId: w.id, amount: pot.amount, hand: 'Win by Fold' });
+      results.push({
+        playerId: w.id,
+        playerName: w.name,
+        amount: pot.amount,
+        hand: 'Win by Fold'
+      });
       lastWinners = [{ player: w, hand: { name: 'Win by Fold' } }];
       return;
     }
@@ -1409,7 +1583,12 @@ function endHand(room) {
     winners.forEach(w => {
       const amt = baseShare + (remainder-- > 0 ? 1 : 0);
       w.player.chips += amt;
-      results.push({ playerId: w.player.id, amount: amt, hand: w.hand.name });
+      results.push({
+        playerId: w.player.id,
+        playerName: w.player.name,
+        amount: amt,
+        hand: w.hand.name
+      });
     });
     lastWinners = winners;
   });
@@ -1495,6 +1674,10 @@ function endHand(room) {
       p.isSittingOut = true;
     }
   });
+  // 连续空闲 → 自动暂离 / 离座；处理手动暂离、退出座位
+  applyIdleAndSitOutRules(room);
+  if (!rooms.has(room.id)) return;
+
   // 本手结束后：仍离线的玩家移入暂离；主动离座的下轮坐出
   for (const [sid, p] of [...room.players.entries()]) {
     if (p.disconnected && p.userId) {
@@ -1508,8 +1691,8 @@ function endHand(room) {
   scheduleNextHand(room, AUTO_NEXT_HAND_MS);
 }
 
-/** 一手结束到下一手开局的间隔（看清公共牌 / 赢牌结果） */
-const AUTO_NEXT_HAND_MS = 3500;
+/** 一手结束到下一手开局的间隔（看清公共牌 / 赢牌结果 / 可选秀牌） */
+const AUTO_NEXT_HAND_MS = 6500;
 
 function countPotentialNextHandPlayers(room) {
   let n = 0;
@@ -1754,6 +1937,67 @@ io.on('connection', (socket) => {
       broadcastState(room);
     }
   });
+
+  // 留位暂离（本手结束后生效；非下注中立刻生效）
+  socket.on('sit-out', () => {
+    const room = Array.from(rooms.values()).find(r => r.players.has(socket.id));
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+    const inBetting = room.gameState.status === 'playing'
+      && room.gameState.bettingRound !== 'showdown'
+      && !player.folded;
+    if (inBetting) {
+      player.wantSitOut = true;
+      player.wantLeaveSeat = false;
+      socket.emit('sit-out-pending', { message: '本手结束后将暂离（留位）' });
+    } else {
+      player.isSittingOut = true;
+      player.wantSitOut = false;
+      player.folded = true;
+      socket.emit('auto-sit-out', { idleHands: player.idleHands || 0, message: '已暂离（留位）' });
+    }
+    broadcastState(room);
+  });
+
+  // 回桌继续打牌（或取消「本手结束后暂离」）
+  socket.on('sit-in', () => {
+    const room = Array.from(rooms.values()).find(r => r.players.has(socket.id));
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+    if (player.chips <= 0 && player.isSittingOut) {
+      return socket.emit('error-msg', '筹码不足，请先买入再回桌');
+    }
+    const wasSittingOut = player.isSittingOut;
+    player.isSittingOut = false;
+    player.wantSitOut = false;
+    player.wantLeaveSeat = false;
+    if (wasSittingOut) player.idleHands = 0;
+    broadcastState(room);
+    tryResumeHandIfNeeded(room);
+  });
+
+  // 退出座位：释放座位，筹码回账户，变为观战
+  socket.on('leave-seat', () => {
+    const room = Array.from(rooms.values()).find(r => r.players.has(socket.id));
+    if (!room) return;
+    const player = room.players.get(socket.id);
+    if (!player) return;
+    const inBetting = room.gameState.status === 'playing'
+      && room.gameState.bettingRound !== 'showdown'
+      && !player.folded
+      && !player.isSittingOut;
+    if (inBetting) {
+      player.wantLeaveSeat = true;
+      player.wantSitOut = false;
+      socket.emit('leave-seat-pending', { message: '本手结束后将离开座位' });
+      broadcastState(room);
+      return;
+    }
+    forceLeaveSeat(room, socket.id, 'leave');
+    if (rooms.has(room.id)) broadcastState(room);
+  });
   
   socket.on('spectate-room', (data) => {
     const fresh = db.getUserById(user.id);
@@ -1960,6 +2204,43 @@ io.on('connection', (socket) => {
     settleSession(room, 'host');
   });
   
+  /** 摊牌阶段秀牌：indexes 为 [0]/[1]/[0,1] 或 'all'；弃牌者手动秀，池内已自动秀 */
+  socket.on('show-cards', (data) => {
+    const room = findRoomBySocket(socket.id);
+    if (!room) return;
+    if (room.gameState.status !== 'playing' || room.gameState.bettingRound !== 'showdown') return;
+    const player = room.players.get(socket.id);
+    if (!player || !(player.holeCards || []).length) return;
+
+    let indexes = [];
+    if (data === 'all' || data?.indexes === 'all' || data?.all) {
+      indexes = player.holeCards.map((_, i) => i);
+    } else if (Array.isArray(data?.indexes)) {
+      indexes = data.indexes.map(n => parseInt(n, 10)).filter(n => n >= 0 && n < player.holeCards.length);
+    } else if (typeof data?.index === 'number') {
+      indexes = [data.index];
+    } else if (typeof data === 'number') {
+      indexes = [data];
+    }
+    if (!indexes.length) return;
+
+    if (!Array.isArray(player.shownHoleMask)) player.shownHoleMask = [false, false];
+    for (const i of indexes) player.shownHoleMask[i] = true;
+
+    const lastLog = room.handLogs[room.handLogs.length - 1];
+    if (lastLog) {
+      const row = lastLog.players.find(r => r.playerId === player.id
+        || (player.userId && r.userId === player.userId));
+      if (row) {
+        row.showed = player.shownHoleMask.some(Boolean);
+        row.shownHoleMask = [...player.shownHoleMask];
+        row.holeCards = [...(player.holeCards || [])];
+      }
+    }
+
+    broadcastState(room);
+  });
+
   socket.on('action', (data) => {
     const room = Array.from(rooms.values()).find(r => r.players.has(socket.id));
     if (!room) return;
@@ -1974,21 +2255,52 @@ io.on('connection', (socket) => {
     const trimmed = msg.trim().slice(0, 500);
     if (!trimmed) return;
     const player = room.players.get(socket.id);
-    const senderName = player ? player.name : 'Spectator';
-    const message = { sender: senderName, message: trimmed, timestamp: Date.now(), isSpectator: false };
+    if (!player) return;
+    const message = {
+      sender: player.name,
+      message: trimmed,
+      timestamp: Date.now(),
+      isSpectator: false,
+      playerId: socket.id,
+      seatIndex: player.seatIndex,
+      kind: 'text'
+    };
     room.chat.push(message);
     room.players.forEach((_, sid) => io.to(sid).emit('chat-message', message));
+    room.spectators.forEach(sid => io.to(sid).emit('chat-message', message));
   });
-  
-  const ALLOWED_EMOJIS = ['😂','🔥','👏','😮','💀'];
+
+  // 自研表情白名单（Unicode，非第三方版权素材）
+  const ALLOWED_EMOJIS = new Set([
+    '😂','🤣','😆','😅','😏','😎','🤩','🥳','😮','🫡',
+    '😍','🥰','😘','😭','😢','😤','😠','🤬','😱','🤯','😳','🥵',
+    '👍','👎','👏','💪','🙏','🤝','✌️','🤞','👀','🤔','😴','🥱',
+    '🔥','💀','👻','💩','🤡','😈','🤖','💯','⭐','✨','🎉','💔','❤️','❤','💰','🃏','🎯',
+    '🏆','🍾','🙈','🎲'
+  ]);
+  function normalizeEmote(raw) {
+    return String(raw || '').normalize('NFC').replace(/\uFE0F/g, '').trim();
+  }
   socket.on('emoji', (emoji) => {
     const room = Array.from(rooms.values()).find(r => r.players.has(socket.id));
     if (!room) return;
-    if (!ALLOWED_EMOJIS.includes(emoji)) return;
+    const raw = typeof emoji === 'string' ? emoji.trim().slice(0, 16) : '';
+    if (!raw) return;
+    const norm = normalizeEmote(raw);
+    const allowed = ALLOWED_EMOJIS.has(raw) || ALLOWED_EMOJIS.has(norm)
+      || [...ALLOWED_EMOJIS].some(e => normalizeEmote(e) === norm);
+    if (!allowed) return;
     const player = room.players.get(socket.id);
     if (!player) return;
-    room.players.forEach((_, sid) => io.to(sid).emit('emoji-received', { playerId: socket.id, seatIndex: player.seatIndex, emoji }));
-    room.spectators.forEach(sid => io.to(sid).emit('emoji-received', { playerId: socket.id, seatIndex: player.seatIndex, emoji }));
+    const payload = {
+      playerId: socket.id,
+      seatIndex: player.seatIndex,
+      emoji: raw,
+      sender: player.name,
+      kind: 'emoji'
+    };
+    room.players.forEach((_, sid) => io.to(sid).emit('emoji-received', payload));
+    room.spectators.forEach(sid => io.to(sid).emit('emoji-received', payload));
   });
   
   socket.on('host-action', (data) => {

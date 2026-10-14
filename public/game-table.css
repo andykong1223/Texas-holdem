@@ -1,0 +1,1168 @@
+/**
+ * PokerNow 风格牌桌布局（自研实现，不含其商标/素材）
+ * 横向椭圆桌 + 矩形座位 + 底部操作条
+ */
+
+#screen-game.active {
+  background: #1a1a1a;
+}
+
+#screen-game #sidebar {
+  background: #141414;
+  border-right-color: #2a2a2a;
+}
+
+#screen-game #table-container {
+  position: relative;
+  background: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#screen-game #top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  min-height: 0;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: transparent;
+  pointer-events: none;
+}
+#screen-game #top-bar > * { pointer-events: auto; }
+#screen-game #top-bar .btn-chip,
+#screen-game #top-bar .top-menu-trigger {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #eee;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#screen-game #table-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 8px 120px;
+  overflow: hidden;
+}
+
+/* 横向椭圆桌 */
+#screen-game #poker-table {
+  --table-w: min(94vw, 1040px);
+  --table-h: min(58dvh, calc(var(--table-w) * 0.52), 520px);
+  width: var(--table-w);
+  height: var(--table-h);
+  max-width: none;
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 50%;
+  border: 16px solid #2c2c2c;
+  background:
+    radial-gradient(ellipse at 50% 40%, #2f8a55 0%, #1f6a3e 48%, #175533 100%);
+  box-shadow:
+    0 0 0 3px #111,
+    0 18px 40px rgba(0,0,0,0.55),
+    inset 0 0 70px rgba(0,0,0,0.35);
+  flex-shrink: 0;
+  position: relative;
+}
+#screen-game .felt-inner {
+  inset: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+#screen-game #poker-table::after {
+  content: "No Limit Texas Hold'em";
+  position: absolute;
+  left: 50%;
+  top: 54%;
+  transform: translate(-50%, -50%);
+  font-size: clamp(0.7rem, 2vw, 1.05rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: rgba(255,255,255,0.18);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+#screen-game #board-center {
+  top: 38%;
+  z-index: 12;
+  gap: 10px;
+}
+#screen-game #pot-display {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  color: #fff;
+  font-size: 0.95rem;
+  padding: 6px 18px;
+  border-radius: 999px;
+  text-shadow: none;
+}
+#screen-game #community-cards {
+  min-height: 64px;
+  gap: 6px;
+}
+#screen-game #community-cards .card {
+  width: 50px;
+  height: 72px;
+  padding: 3px 4px;
+}
+#screen-game #community-cards .card-rank {
+  font-size: 1.25rem;
+  font-weight: 900;
+}
+#screen-game #community-cards .card-suit-center {
+  font-size: 1.15rem;
+  top: 62%;
+}
+
+/* —— 对手座位：白名牌 + 牌背压在名牌上方（PokerNow） —— */
+#screen-game .seat {
+  width: 118px;
+  min-height: 44px;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  align-items: stretch;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-sizing: border-box;
+  z-index: 8;
+  overflow: visible;
+  transition: opacity 0.15s;
+}
+#screen-game .seat.empty {
+  opacity: 0.75;
+  width: 100px;
+  min-height: 44px;
+  padding: 8px;
+  justify-content: center;
+  align-items: center;
+  background: rgba(28, 28, 28, 0.55);
+  border: 1px dashed rgba(255,255,255,0.35);
+  border-radius: 6px;
+}
+#screen-game .seat.empty .seat-info { display: none; }
+#screen-game .seat.empty .seat-sit {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+#screen-game .seat-num { display: none; }
+#screen-game .seat-avatar-wrap { display: none; }
+
+/* 默认暗名牌；轮到行动变白 + 光晕（PokerNow） */
+#screen-game .seat-info {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  max-width: none;
+  margin-top: 22px;
+  padding: 8px 10px 10px;
+  background: rgba(36, 36, 36, 0.92);
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  text-align: left;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+#screen-game .seat-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #f2f2f2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+#screen-game .seat-chips {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #eee;
+  transition: color 0.18s ease;
+}
+
+/* 行动读秒条 */
+#screen-game .seat-timer-bar {
+  display: none;
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.14);
+  overflow: hidden;
+}
+#screen-game .seat.active .seat-timer-bar {
+  display: block;
+  background: rgba(0,0,0,0.12);
+}
+#screen-game .seat-timer-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #9b59b6 0%, #2ecc71 30%, #2ecc71 100%);
+  transition: width 0.1s linear;
+}
+#screen-game .seat-timer-fill.urgent { background: #e74c3c; }
+#screen-game .seat.me .seat-timer-bar { display: none !important; }
+
+#screen-game .seat.me {
+  opacity: 1;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+  z-index: 10;
+}
+#screen-game .seat.me .seat-info { display: none; }
+
+#screen-game .seat.active {
+  z-index: 12;
+}
+#screen-game .seat.active::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  width: 165%;
+  height: 135%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center,
+    rgba(255,255,255,0.45) 0%,
+    rgba(255,255,255,0.18) 40%,
+    transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+}
+#screen-game .seat.active .seat-info {
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.95),
+    0 0 16px 4px rgba(255,255,255,0.55),
+    0 0 34px 12px rgba(255,255,255,0.22),
+    0 6px 18px rgba(0,0,0,0.4);
+}
+#screen-game .seat.active .seat-name,
+#screen-game .seat.active .seat-chips {
+  color: #111;
+}
+#screen-game .seat.folded { opacity: 0.42; }
+#screen-game .seat.away { opacity: 0.45; }
+
+/* 手牌压在白名牌上方，微微扇开 */
+#screen-game .seat-cards,
+#screen-game .seat.cards-left .seat-cards {
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+#screen-game .seat-cards .card {
+  width: 34px;
+  height: 48px;
+  padding: 2px 3px;
+  border-radius: 5px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.45);
+}
+#screen-game .seat-cards .card:first-child {
+  transform: rotate(-10deg);
+  margin-right: -10px;
+  z-index: 1;
+}
+#screen-game .seat-cards .card:last-child {
+  transform: rotate(10deg);
+  z-index: 2;
+}
+#screen-game .seat-cards .card-rank { font-size: 0.85rem; font-weight: 900; }
+#screen-game .seat-cards .card-suit-center { font-size: 1rem; top: 58%; }
+#screen-game .seat-cards.revealed .card {
+  width: 40px;
+  height: 56px;
+  padding: 2px 3px;
+}
+#screen-game .seat-cards.revealed .card:first-child { margin-right: -8px; }
+#screen-game .seat-cards.revealed .card-rank { font-size: 1.05rem; }
+#screen-game .seat-cards.revealed .card-suit-center { font-size: 1.25rem; }
+#screen-game .seat.me .seat-cards { display: none; }
+
+#screen-game .seat-status-tag {
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #222;
+  border: 1px solid #444;
+  font-size: 0.62rem;
+}
+#screen-game .seat-position {
+  top: -16px;
+  left: auto;
+  right: 0;
+  transform: none;
+  font-size: 0.58rem;
+}
+#screen-game .dealer-button {
+  top: 50%;
+  right: -14px;
+  left: auto;
+  bottom: auto;
+  transform: translateY(-20%);
+  width: 22px;
+  height: 22px;
+  font-size: 0.7rem;
+  z-index: 3;
+}
+#screen-game .seat-bet {
+  bottom: auto;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #d4e157;
+  color: #111;
+  border: none;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  z-index: 4;
+}
+#screen-game .seat-timer-ring { display: none; }
+
+/* 自己座位：手牌/名牌改由底部 hero-board 展示，桌面座位只保留站位锚点 */
+#screen-game .seat.me {
+  pointer-events: none;
+}
+#screen-game .seat.me .seat-info,
+#screen-game .seat.me .seat-cards,
+#screen-game .seat.me .seat-bet,
+#screen-game .seat.me .seat-num,
+#screen-game .seat.me .seat-status-tag,
+#screen-game .seat.me .seat-position,
+#screen-game .seat.me .dealer-button {
+  display: none !important;
+}
+#screen-game .seat.me {
+  width: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 手牌区：牌压在白色名牌上（PokerNow） */
+#screen-game #hero-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 0;
+  gap: 4px;
+  background: transparent;
+  pointer-events: none;
+  justify-content: flex-end;
+  align-items: center;
+  transition: bottom 0.2s ease;
+}
+#screen-game #table-container:has(#action-bar.my-turn) #hero-zone {
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+#screen-game #table-container:has(#action-bar.raise-open) #hero-zone {
+  bottom: calc(168px + env(safe-area-inset-bottom, 0px));
+}
+#screen-game .hero-row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  pointer-events: none;
+}
+#screen-game .hero-side-tools {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+#screen-game .hero-tool-btn {
+  position: relative;
+  min-width: 52px;
+  padding: 8px 10px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #eee;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+  -webkit-tap-highlight-color: transparent;
+}
+#screen-game .hero-tool-btn:active {
+  background: #3a3a3a;
+}
+#screen-game .hero-tool-btn .notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  font-size: 0.58rem;
+}
+#screen-game .hero-board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(168px, 48vw);
+  pointer-events: none;
+}
+#screen-game .hero-board::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: 140%;
+  height: 90%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.28) 0%, transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity 0.2s ease;
+}
+#screen-game #hero-zone.is-my-turn .hero-board::before { opacity: 1; }
+#screen-game #hero-cards {
+  position: relative;
+  z-index: 2;
+  margin-bottom: -26px;
+  gap: 5px;
+}
+#screen-game #hero-cards .card {
+  width: 66px;
+  height: 94px;
+  border-radius: 8px;
+  padding: 4px 5px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.5);
+  transform: rotate(var(--hero-rot, 0deg));
+}
+#screen-game #hero-cards .card-rank {
+  font-size: 1.7rem;
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+}
+#screen-game #hero-cards .card-suit-center {
+  font-size: 2.2rem;
+  top: 58%;
+}
+#screen-game #hero-cards .card:first-child { --hero-rot: -7deg; }
+#screen-game #hero-cards .card:last-child { --hero-rot: 7deg; }
+#screen-game .hero-nameplate {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 28px 10px 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  text-align: center;
+}
+#screen-game .hero-stack {
+  display: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  box-shadow: none;
+  text-shadow: none;
+  color: #111;
+}
+#screen-game .hero-stack.show { display: block; }
+#screen-game .hero-name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #111;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-game .hero-chips {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #222;
+  margin-top: 2px;
+}
+#screen-game .hero-timer-bar {
+  margin-top: 7px;
+  height: 3px;
+  width: 100%;
+  background: rgba(0,0,0,0.12);
+  border-radius: 999px;
+  overflow: hidden;
+}
+#screen-game .hero-timer-fill {
+  height: 100%;
+  width: 100%;
+  background: #2ecc71;
+  transition: width 0.1s linear;
+}
+#screen-game .hero-timer-fill.urgent { background: #e74c3c; }
+#screen-game .hero-dealer {
+  position: absolute;
+  top: 8px;
+  left: -28px;
+  z-index: 4;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  color: #1a5fb4;
+  font-size: 0.72rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+#screen-game .hero-dealer[hidden] { display: none !important; }
+#screen-game .hero-bet-chip {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 50%;
+  background: #d4e157;
+  color: #111;
+  font-size: 0.7rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+#screen-game .hero-bet-chip[hidden] { display: none !important; }
+#screen-game .hero-board .turn-indicator {
+  position: absolute;
+  top: 36px;
+  right: -78px;
+  z-index: 4;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  color: #f1c40f;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  min-height: 0;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+#screen-game .hero-board .turn-indicator:not(.hidden) {
+  display: flex !important;
+}
+#screen-game .hero-board .turn-indicator::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f1c40f;
+  flex-shrink: 0;
+}
+#screen-game .hero-hand-rank {
+  order: 0;
+  background: rgba(0,0,0,0.7);
+  border-color: rgba(255,255,255,0.2);
+}
+#screen-game #hero-meta {
+  width: auto;
+}
+#screen-game .action-status {
+  color: #ccc;
+  text-shadow: 0 1px 3px #000;
+  font-size: 0.72rem;
+}
+#screen-game #hero-zone.is-my-turn #hero-meta { display: none; }
+
+/* 底部操作：PokerNow 两步（主操作 → 点 RAISE 进加注面板） */
+#screen-game #action-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  padding: 6px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,0.92) 28%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow: visible;
+  pointer-events: none;
+}
+#screen-game #action-bar > * { pointer-events: auto; }
+
+/* EXTRA TIME ACTIVATED */
+#screen-game #action-bar #btn-extend-timer.btn-extra-time,
+#screen-game .btn-extra-time {
+  display: none;
+  align-self: flex-end;
+  position: relative;
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 2px 2px;
+  padding: 8px 12px 8px 30px !important;
+  border-radius: 4px !important;
+  border: none !important;
+  background: #f4f4f4 !important;
+  color: #111 !important;
+  font-size: 0.62rem !important;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: none !important;
+  transform: none !important;
+  text-transform: uppercase;
+}
+#screen-game .btn-extra-time.show { display: inline-flex !important; align-items: center; }
+#screen-game .btn-extra-time .extend-ring {
+  position: absolute;
+  left: 6px;
+  width: 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+}
+#screen-game .btn-extra-time .extend-ring-bg {
+  fill: none;
+  stroke: rgba(0,0,0,0.15);
+  stroke-width: 3;
+}
+#screen-game .btn-extra-time .extend-ring-fg {
+  fill: none;
+  stroke: #2ecc71;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+}
+#screen-game .btn-extra-time.urgent .extend-ring-fg { stroke: #e74c3c; }
+
+/* 主操作四键：描边 */
+#screen-game #action-bar .actions-row {
+  display: none !important;
+  width: 100%;
+  gap: 6px;
+  margin: 0;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+#screen-game #action-bar.my-turn:not(.raise-open) .actions-row {
+  display: flex !important;
+}
+#screen-game #action-bar.raise-open .actions-row {
+  display: none !important;
+}
+
+#screen-game #action-bar .act-btn,
+#screen-game #action-bar .actions-row .act-btn {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 6px !important;
+  border-radius: 6px !important;
+  font-size: 0.82rem !important;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: none !important;
+  transform: none !important;
+  background: transparent !important;
+  border: 1.5px solid #666 !important;
+  color: #888 !important;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#screen-game #action-bar #btn-call { order: 1; }
+#screen-game #action-bar #btn-raise { order: 2; }
+#screen-game #action-bar #btn-check { order: 3; }
+#screen-game #action-bar #btn-fold { order: 4; }
+#screen-game #action-bar #btn-allin { display: none !important; }
+
+/* 可点：正向操作为绿，弃牌为红 */
+#screen-game #action-bar #btn-call:not(:disabled):not(.is-disabled),
+#screen-game #action-bar #btn-check:not(:disabled):not(.is-disabled),
+#screen-game #action-bar #btn-raise:not(:disabled):not(.is-disabled) {
+  border-color: #2ecc71 !important;
+  color: #2ecc71 !important;
+}
+#screen-game #action-bar #btn-fold:not(:disabled):not(.is-disabled) {
+  border-color: #e74c3c !important;
+  color: #e74c3c !important;
+}
+
+/* 不可点：一律灰 */
+#screen-game #action-bar .act-btn.is-disabled,
+#screen-game #action-bar .act-btn:disabled {
+  border-color: #555 !important;
+  color: #666 !important;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#screen-game #action-bar .waiting-actions {
+  width: 100%;
+  margin: 0;
+}
+#screen-game #action-bar .waiting-actions .act-btn {
+  width: 100% !important;
+  max-width: none !important;
+  border-radius: 6px !important;
+  background: #27ae60 !important;
+  border-color: #27ae60 !important;
+  color: #fff !important;
+}
+
+/* 加注面板：左 Your bet/尺度/滑条 + 右 BACK/RAISE */
+#screen-game .raise-panel {
+  display: none;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+#screen-game #action-bar.raise-open .raise-panel { display: flex; }
+#screen-game .raise-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#screen-game .raise-confirm-col {
+  flex: 0 0 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#screen-game .raise-bet-box {
+  position: relative;
+  align-self: flex-start;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 6px 12px 8px;
+  min-width: 120px;
+}
+#screen-game .raise-bet-label {
+  display: block;
+  font-size: 0.64rem;
+  color: #aaa;
+}
+#screen-game .raise-bet-bb {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: #f1c40f;
+}
+#screen-game .raise-bet-value {
+  margin-top: 2px;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: #2ecc71;
+  line-height: 1.1;
+}
+
+#screen-game #action-bar .bet-presets {
+  display: flex !important;
+  flex-wrap: nowrap;
+  gap: 3px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  position: static;
+}
+#screen-game #action-bar .preset-btn {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 34px !important;
+  padding: 0 2px !important;
+  border-radius: 4px !important;
+  transform: none !important;
+  font-size: 0.52rem !important;
+  font-weight: 800;
+  letter-spacing: 0;
+  background: #2f2f2f !important;
+  border: 1px solid #555 !important;
+  color: #eee !important;
+  white-space: nowrap;
+  box-shadow: none !important;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+#screen-game #action-bar .preset-btn.active {
+  border-color: #2ecc71 !important;
+  color: #2ecc71 !important;
+}
+#screen-game #action-bar .preset-allin {
+  border-color: #e67e22 !important;
+  color: #f5b041 !important;
+}
+
+#screen-game #action-bar .raise-slider-row {
+  display: grid !important;
+  grid-template-columns: 36px 1fr 36px;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  visibility: visible !important;
+  pointer-events: auto;
+}
+#screen-game .raise-step-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  border: 1px solid #555;
+  background: #2f2f2f;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+#screen-game #raise-slider {
+  width: 100%;
+  accent-color: #f39c12;
+  height: 28px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+#screen-game #raise-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #3a3a3a;
+}
+#screen-game #raise-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #f39c12;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+#screen-game #raise-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #3a3a3a;
+}
+#screen-game #raise-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #f39c12;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+}
+
+#screen-game #action-bar .raise-confirm-col .act-btn {
+  flex: 1 1 0 !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 48px !important;
+  border-radius: 6px !important;
+  font-size: 0.85rem !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+}
+/* BACK / BET·RAISE：可操作态，不能套主栏的灰色禁用样式 */
+#screen-game #action-bar .raise-confirm-col .act-back {
+  border-color: #888 !important;
+  color: #eee !important;
+  background: #3a3a3a !important;
+}
+#screen-game #action-bar .raise-confirm-col .act-raise-confirm,
+#screen-game #action-bar .raise-confirm-col #btn-raise-confirm {
+  border-color: #27ae60 !important;
+  color: #fff !important;
+  background: #1e8449 !important;
+}
+
+/* 摊牌秀牌栏（PokerNow） */
+#screen-game .show-cards-bar {
+  display: none;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  max-width: 420px;
+  align-self: flex-end;
+  margin: 0 0 2px;
+  border: 1.5px solid #2ecc71;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.55);
+}
+#screen-game #action-bar.show-cards-open .show-cards-bar:not([hidden]) {
+  display: flex;
+}
+#screen-game #action-bar.show-cards-open .actions-row,
+#screen-game #action-bar.show-cards-open .raise-panel,
+#screen-game #action-bar.show-cards-open .btn-extra-time {
+  display: none !important;
+}
+#screen-game .show-all-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  border-right: 1px solid rgba(46, 204, 113, 0.45);
+  background: transparent;
+  color: #2ecc71;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 12px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+#screen-game .show-one-btn {
+  flex: 0 0 52px;
+  width: 52px;
+  border: none;
+  border-right: 1px solid rgba(46, 204, 113, 0.35);
+  background: transparent;
+  color: #eee;
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding: 10px 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+#screen-game .show-one-btn:last-child { border-right: none; }
+#screen-game .show-one-btn.red { color: #e74c3c; }
+#screen-game .show-one-btn.is-shown,
+#screen-game .show-one-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+#screen-game .show-all-btn:active,
+#screen-game .show-one-btn:not(:disabled):active {
+  background: rgba(46, 204, 113, 0.12);
+}
+
+
+/* ========== 手机：竖向跑道桌（PokerNow App 几何） ========== */
+@media (max-width: 900px) {
+  #screen-game #table-stage {
+    padding: 44px 0 118px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 竖向胶囊桌：窄而高，铺满中间区域 */
+  #screen-game #poker-table {
+    --table-w: min(78vw, 340px);
+    --table-h: min(68dvh, 560px, calc(100dvh - 200px));
+    width: var(--table-w);
+    height: var(--table-h);
+    border-radius: 9999px;
+    border-width: 10px;
+  }
+  #screen-game .felt-inner {
+    border-radius: 9999px;
+    inset: 10px;
+  }
+  #screen-game #poker-table::after {
+    top: 58%;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    white-space: normal;
+    text-align: center;
+    max-width: 70%;
+    line-height: 1.3;
+  }
+
+  #screen-game #board-center {
+    top: 42%;
+    gap: 8px;
+  }
+  #screen-game #community-cards .card {
+    width: 40px;
+    height: 56px;
+  }
+  #screen-game #pot-display {
+    font-size: 0.85rem;
+    padding: 5px 14px;
+  }
+
+  /* 座位：贴在竖桌两侧的矩形框 */
+  #screen-game .seat {
+    width: 100px;
+    min-height: 52px;
+    padding: 6px 8px;
+  }
+  #screen-game .seat.empty {
+    width: 88px;
+    min-height: 48px;
+  }
+  #screen-game .seat-sit {
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+  }
+  #screen-game .seat { width: 108px; }
+  #screen-game .seat-info { margin-top: 20px; padding: 7px 8px 9px; }
+  #screen-game .seat-name { font-size: 0.7rem; }
+  #screen-game .seat-chips { font-size: 0.8rem; }
+  #screen-game .seat-cards .card {
+    width: 30px;
+    height: 42px;
+  }
+  #screen-game .seat-cards .card:first-child { margin-right: -8px; }
+  #screen-game .seat-cards.revealed .card {
+    width: 34px;
+    height: 48px;
+  }
+
+  /* 自己手牌：桌底上方 */
+  #screen-game #hero-zone {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    gap: 4px;
+  }
+  #screen-game #table-container:has(#action-bar.my-turn) #hero-zone {
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+  #screen-game #table-container:has(#action-bar.raise-open) #hero-zone {
+    bottom: calc(158px + env(safe-area-inset-bottom, 0px));
+  }
+  #screen-game .hero-board {
+    width: min(152px, 44vw);
+  }
+  #screen-game #hero-cards .card {
+    width: 62px;
+    height: 88px;
+  }
+  #screen-game #hero-cards .card-rank { font-size: 1.55rem; }
+  #screen-game #hero-cards .card-suit-center { font-size: 2rem; }
+  #screen-game .hero-board .turn-indicator {
+    right: -72px;
+    top: 28px;
+    font-size: 0.62rem;
+  }
+  #screen-game .hero-hand-rank {
+    font-size: 0.75rem;
+  }
+
+  #screen-game #action-bar {
+    padding: 6px 6px calc(8px + env(safe-area-inset-bottom, 0px));
+    gap: 5px;
+  }
+  #screen-game #action-bar .preset-btn {
+    font-size: 0.5rem !important;
+    height: 32px !important;
+  }
+  #screen-game .raise-confirm-col {
+    flex-basis: 88px;
+  }
+  #screen-game #action-bar .waiting-actions {
+    width: 100%;
+    padding: 0 4px;
+  }
+}
+
+@media (max-width: 380px) {
+  #screen-game #poker-table {
+    --table-w: min(82vw, 300px);
+    --table-h: min(64dvh, 480px);
+    border-width: 8px;
+  }
+  #screen-game .seat {
+    width: 88px;
+    min-height: 46px;
+  }
+  #screen-game .seat.empty { width: 78px; }
+  #screen-game #hero-cards .card {
+    width: 56px;
+    height: 80px;
+  }
+  #screen-game #hero-cards .card-rank { font-size: 1.4rem; }
+  #screen-game .hero-board .turn-indicator {
+    right: auto;
+    left: 50%;
+    top: -16px;
+    transform: translateX(-50%);
+  }
+  #screen-game #action-bar .act-btn,
+  #screen-game #action-bar .actions-row .act-btn {
+    height: 42px !important;
+    min-height: 42px !important;
+    font-size: 0.7rem !important;
+  }
+}

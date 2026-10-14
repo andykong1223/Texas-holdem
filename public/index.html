@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>德州大厅</title>
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="lobby.css">
+  <link rel="stylesheet" href="style.css?v=20261014t">
+  <link rel="stylesheet" href="lobby.css?v=20261014t">
+  <link rel="stylesheet" href="game-table.css?v=20261014t">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -260,6 +261,7 @@
       </div>
 
       <div id="table-container">
+        <div id="seat-bubbles" aria-hidden="true"></div>
         <div id="top-bar">
           <div class="room-info">
             <span id="room-code-display"></span>
@@ -268,9 +270,11 @@
             <span id="host-display"></span>
           </div>
           <div class="top-actions">
+            <button type="button" class="btn btn-chip" id="btn-sit-out" onclick="toggleSitOut()" title="暂离留位；连续2手未操作也会自动暂离">暂离</button>
+            <button type="button" class="btn btn-chip btn-leave" id="btn-leave-seat" onclick="leaveSeat()" title="退出座位；连续5手未操作也会自动离座">退出</button>
             <div class="top-menu" id="top-menu">
               <button type="button" class="btn btn-chip top-menu-trigger" id="top-menu-btn" onclick="toggleTopMenu(event)" title="菜单" aria-haspopup="true" aria-expanded="false">
-                菜单
+                OPTIONS
                 <span class="notification-badge" id="menu-badge">0</span>
               </button>
               <div class="top-menu-dropdown" id="top-menu-dropdown" role="menu">
@@ -290,11 +294,8 @@
                 <button type="button" class="top-menu-item" role="menuitem" id="history-btn" onclick="menuAction(openHandHistory)">
                   📋 手牌记录
                 </button>
-                <button type="button" class="top-menu-item" role="menuitem" id="chat-btn" onclick="menuAction(toggleChat)">
-                  💬 聊天
-                </button>
                 <button type="button" class="top-menu-item top-menu-item-danger" role="menuitem" onclick="menuAction(leaveRoom)">
-                  离开牌桌
+                  离开牌桌（留位）
                 </button>
               </div>
             </div>
@@ -325,8 +326,27 @@
         </div>
 
         <div id="hero-zone">
-          <div id="hero-cards"></div>
-          <div id="hero-stack" class="hero-stack" aria-live="polite"></div>
+          <div class="hero-row">
+            <div class="hero-side-tools">
+              <button type="button" class="hero-tool-btn" id="hero-chat-btn" onclick="toggleChat()" title="聊天">
+                CHAT
+                <span class="notification-badge" id="chat-badge">0</span>
+              </button>
+              <button type="button" class="hero-tool-btn" id="hero-log-btn" onclick="openHandHistory()" title="手牌记录">LOG</button>
+            </div>
+            <div class="hero-board">
+              <div id="hero-dealer" class="hero-dealer" hidden>D</div>
+              <div id="hero-bet-chip" class="hero-bet-chip" hidden>0</div>
+              <div id="hero-cards"></div>
+              <div id="turn-indicator" class="turn-indicator hidden">YOUR TURN</div>
+              <div class="hero-nameplate">
+                <div id="hero-stack" class="hero-stack" aria-live="polite"></div>
+                <div id="hero-timer-bar" class="hero-timer-bar" hidden>
+                  <div id="hero-timer-fill" class="hero-timer-fill"></div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div id="hero-hand-rank" class="hero-hand-rank" aria-live="polite"></div>
           <div id="hero-meta">
             <span id="action-status" class="action-status">等待开局…</span>
@@ -334,34 +354,61 @@
         </div>
 
         <div id="action-bar">
-          <div id="turn-indicator" class="turn-indicator hidden">轮到你了</div>
-          <div class="bet-presets" id="bet-presets">
-            <button type="button" class="preset-btn" onclick="setRaisePreset(0.33)">1/3</button>
-            <button type="button" class="preset-btn" onclick="setRaisePreset(0.5)">1/2</button>
-            <button type="button" class="preset-btn" onclick="setRaisePreset(0.75)">3/4</button>
-            <button type="button" class="preset-btn" onclick="setRaisePreset(1)">底池</button>
-            <button type="button" class="preset-btn preset-allin" onclick="sendAllIn()">全下</button>
-          </div>
-          <div class="raise-slider-row" id="raise-slider-row">
-            <input type="range" id="raise-slider" min="0" max="100" value="0" oninput="onRaiseSlider()">
-            <input type="number" id="raise-amount" min="0" placeholder="加注" inputmode="numeric" title="加注金额">
-          </div>
           <div id="waiting-actions" class="waiting-actions">
             <button type="button" class="act-btn act-raise" onclick="copyCode()">邀请好友加入</button>
           </div>
+
+          <!-- PokerNow：EXTRA TIME -->
+          <button type="button" class="btn-extra-time" id="btn-extend-timer" onclick="extendTurnTimer()" title="延长思考时间">
+            <svg class="extend-ring" viewBox="0 0 36 36" aria-hidden="true">
+              <circle class="extend-ring-bg" cx="18" cy="18" r="15.5"></circle>
+              <circle class="extend-ring-fg" id="timer-ring-fg" cx="18" cy="18" r="15.5" pathLength="100"></circle>
+            </svg>
+            <span class="extra-time-label">EXTRA TIME ACTIVATED</span>
+          </button>
+
+          <!-- 主操作：CALL / RAISE / CHECK / FOLD -->
           <div class="actions-row" id="actions-row">
-            <button type="button" class="act-btn act-extend" id="btn-extend-timer" onclick="extendTurnTimer()" title="延长思考时间 +10秒" aria-label="延长思考时间">
-              <svg class="extend-ring" viewBox="0 0 36 36" aria-hidden="true">
-                <circle class="extend-ring-bg" cx="18" cy="18" r="15.5" />
-                <circle class="extend-ring-fg" id="timer-ring-fg" cx="18" cy="18" r="15.5" pathLength="100" />
-              </svg>
-              <span class="extend-label">+10</span>
-            </button>
-            <button class="act-btn act-fold" id="btn-fold" onclick="sendAction('fold')">弃牌</button>
-            <button class="act-btn act-check" id="btn-check" onclick="sendAction('check')">过牌</button>
-            <button class="act-btn act-call" id="btn-call" onclick="sendAction('call')">跟注</button>
-            <button class="act-btn act-raise" id="btn-raise" onclick="sendRaise()">加注</button>
+            <button class="act-btn act-call" id="btn-call" onclick="sendAction('call')">CALL</button>
+            <button class="act-btn act-raise" id="btn-raise" onclick="openRaisePanel()">RAISE</button>
+            <button class="act-btn act-check" id="btn-check" onclick="sendAction('check')">CHECK</button>
+            <button class="act-btn act-fold" id="btn-fold" onclick="sendAction('fold')">FOLD</button>
             <button class="act-btn act-allin" id="btn-allin" onclick="sendAllIn()" style="display:none;">全下</button>
+          </div>
+
+          <!-- 点 RAISE 后：Your bet + 尺度 + 滑条 | BACK / RAISE -->
+          <div id="raise-panel" class="raise-panel">
+            <div class="raise-main">
+              <div class="raise-bet-box">
+                <span class="raise-bet-label">Your bet</span>
+                <span id="raise-bet-bb" class="raise-bet-bb">0BB</span>
+                <div id="raise-bet-value" class="raise-bet-value">0</div>
+              </div>
+              <div class="bet-presets" id="bet-presets">
+                <button type="button" class="preset-btn" onclick="applyMinRaise(this)">MIN RAISE</button>
+                <button type="button" class="preset-btn" onclick="applyBetPreset(0.5, this)">1/2 POT</button>
+                <button type="button" class="preset-btn" onclick="applyBetPreset(0.75, this)">3/4 POT</button>
+                <button type="button" class="preset-btn" onclick="applyBetPreset(1, this)">POT</button>
+                <button type="button" class="preset-btn preset-allin" onclick="applyBetAllIn(this)">ALL IN</button>
+              </div>
+              <div class="raise-slider-row" id="raise-slider-row">
+                <button type="button" class="raise-step-btn" onclick="nudgeRaise(-1)" aria-label="减少">−</button>
+                <input type="range" id="raise-slider" min="0" max="100" value="0" oninput="onRaiseSlider()">
+                <button type="button" class="raise-step-btn" onclick="nudgeRaise(1)" aria-label="增加">+</button>
+                <input type="hidden" id="raise-amount" min="0" value="0">
+              </div>
+            </div>
+            <div class="raise-confirm-col">
+              <button type="button" class="act-btn act-back" onclick="closeRaisePanel()">BACK</button>
+              <button type="button" class="act-btn act-raise-confirm" id="btn-raise-confirm" onclick="confirmRaise()">RAISE</button>
+            </div>
+          </div>
+
+          <!-- 一手结束：弃牌者可选手动秀牌（池内玩家已自动秀） -->
+          <div id="show-cards-bar" class="show-cards-bar" hidden>
+            <button type="button" class="show-all-btn" onclick="requestShowCards('all')">SHOW ALL CARDS</button>
+            <button type="button" class="show-one-btn" id="show-card-btn-0" onclick="requestShowCards(0)"></button>
+            <button type="button" class="show-one-btn" id="show-card-btn-1" onclick="requestShowCards(1)"></button>
           </div>
         </div>
 
@@ -379,13 +426,7 @@
           <div id="chat-spectator-notice" class="chat-spectator-notice" style="display:none;">
             观战不能发言或发表情。
           </div>
-          <div id="emoji-picker" class="emoji-picker" style="display:none;">
-            <span onclick="sendEmoji('😂')">😂</span>
-            <span onclick="sendEmoji('🔥')">🔥</span>
-            <span onclick="sendEmoji('👏')">👏</span>
-            <span onclick="sendEmoji('😮')">😮</span>
-            <span onclick="sendEmoji('💀')">💀</span>
-          </div>
+          <div id="emoji-picker" class="emoji-picker" style="display:none;" hidden></div>
         </div>
       </div>
 
@@ -546,8 +587,8 @@
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/api-client.js"></script>
-  <script src="client.js"></script>
-  <script src="js/lobby-app.js"></script>
+  <script src="js/api-client.js?v=20261014t"></script>
+  <script src="client.js?v=20261014t"></script>
+  <script src="js/lobby-app.js?v=20261014t"></script>
 </body>
 </html>

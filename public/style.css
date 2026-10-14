@@ -343,6 +343,10 @@ input[type="checkbox"] { width: auto; }
 }
 .btn-chip:hover { filter: brightness(1.15); }
 .btn-leave { border-color: rgba(231, 76, 60, 0.45); color: #ffb4ab; }
+#btn-sit-out.btn-sit-in {
+  border-color: rgba(46, 204, 113, 0.45);
+  color: #a8f0c0;
+}
 
 .top-menu { position: relative; z-index: 40; }
 .top-menu-trigger {
@@ -515,20 +519,24 @@ input[type="checkbox"] { width: auto; }
   max-width: 320px;
 }
 
-/* Cards */
+/* Cards — PokerNow 式：左上大点数 + 小号花色 + 居中大花色 */
 .card {
+  position: relative;
   width: 48px;
   height: 68px;
   background: linear-gradient(180deg, #fff, #f3f3f3);
   border-radius: 7px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 4px 5px;
-  color: #1a1a1a;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 3px 4px 4px;
+  color: #111;
   box-shadow: 0 3px 8px rgba(0,0,0,0.35);
-  font-weight: 700;
+  font-weight: 800;
   border: 1px solid rgba(0,0,0,0.08);
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .card.red { color: #d62828; }
 .card-back {
@@ -537,8 +545,25 @@ input[type="checkbox"] { width: auto; }
   border: 2px solid #0f2338;
 }
 .card-back::after { content: ""; }
-.card-rank { font-size: 14px; line-height: 1; }
-.card-suit { font-size: 18px; text-align: right; line-height: 1; }
+.card-back .card-rank,
+.card-back .card-suit-center { display: none; }
+.card-rank {
+  position: relative;
+  z-index: 1;
+  font-size: 1.15rem;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+.card-suit-center {
+  position: absolute;
+  left: 52%;
+  top: 58%;
+  transform: translate(-50%, -50%);
+  font-size: 1.7rem;
+  line-height: 1;
+  pointer-events: none;
+}
 
 /* Seats — avatar style */
 .seat {
@@ -968,20 +993,35 @@ input[type="checkbox"] { width: auto; }
 
 .raise-slider-row {
   display: none;
-  grid-template-columns: 1fr 88px;
+  grid-template-columns: 40px 1fr 40px 88px;
   gap: 8px;
   align-items: center;
   margin-bottom: 8px;
 }
 .raise-slider-row.show { display: grid; }
+.raise-step-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
 #raise-slider {
   width: 100%;
   accent-color: #4aa3ff;
 }
 #raise-amount {
+  width: 88px;
+  box-sizing: border-box;
   text-align: center;
   font-weight: 700;
-  padding: 8px;
+  padding: 8px 4px;
   border-radius: 8px;
   background: rgba(0,0,0,0.45);
   border: 1px solid rgba(255,255,255,0.12);
@@ -1037,11 +1077,124 @@ input[type="checkbox"] { width: auto; }
 .chat-input-row { display: flex; padding: 8px; gap: 4px; flex-shrink: 0; }
 .chat-input-row input { flex: 1; min-width: 0; }
 .chat-spectator-notice { padding: 10px; font-size: 0.78rem; color: var(--text-dim); text-align: center; font-style: italic; flex-shrink: 0; border-top: 1px solid #444; }
-.emoji-picker { display: grid; grid-template-columns: repeat(5, 1fr); padding: 8px; gap: 4px; flex-shrink: 0; }
-.emoji-picker span { font-size: 22px; cursor: pointer; text-align: center; }
+.emoji-picker {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 10px;
+  flex-shrink: 0;
+  border-top: 1px solid #444;
+  max-height: 220px;
+  background: #1a1c20;
+}
+.emoji-picker[hidden] { display: none !important; }
+.emoji-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.emoji-tab {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #25272c;
+  color: #aaa;
+  cursor: pointer;
+}
+.emoji-tab.active {
+  background: #3d6b4f;
+  border-color: #5a9a72;
+  color: #fff;
+}
+.emoji-grids { min-height: 0; overflow: hidden; }
+.emoji-grid {
+  display: none;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.emoji-grid.active { display: grid; }
+.emoji-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1.35;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 4px 0;
+}
+.emoji-item:hover,
+.emoji-item:active {
+  background: rgba(255,255,255,0.08);
+  transform: scale(1.12);
+}
+.chat-msg-emoji .chat-emoji-inline { font-size: 1.15rem; }
 
 @keyframes floatUp { 0% { transform: translateY(0) scale(0.5); opacity: 0; } 20% { opacity: 1; transform: translateY(-20px) scale(1.5); } 100% { transform: translateY(-80px) scale(1); opacity: 0; } }
 .floating-emoji { position: absolute; font-size: 32px; pointer-events: none; animation: floatUp 2s forwards; z-index: 100; }
+
+/* 牌桌座位聊天气泡 */
+#seat-bubbles {
+  position: absolute;
+  inset: 0;
+  z-index: 55;
+  pointer-events: none;
+  overflow: hidden;
+}
+.seat-bubble {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  z-index: 56;
+  will-change: transform, opacity;
+}
+.seat-bubble-text {
+  animation: seatBubbleText 3.6s ease forwards;
+  max-width: 148px;
+}
+.seat-bubble-text .seat-bubble-body {
+  display: block;
+  background: rgba(18, 20, 24, 0.94);
+  color: #f2f2f2;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  padding: 7px 10px;
+  border-radius: 12px 12px 12px 4px;
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+  word-break: break-word;
+}
+.seat-bubble-text .seat-bubble-tail {
+  display: none;
+}
+.seat-bubble-emoji {
+  font-size: 42px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.45));
+  animation: seatBubbleEmote 2.8s cubic-bezier(0.22, 1.2, 0.36, 1) forwards;
+}
+@keyframes seatBubbleText {
+  0% { opacity: 0; transform: translate(-50%, -70%) scale(0.85); }
+  12% { opacity: 1; transform: translate(-50%, -108%) scale(1); }
+  78% { opacity: 1; transform: translate(-50%, -108%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -125%) scale(0.96); }
+}
+@keyframes seatBubbleEmote {
+  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.2); }
+  18% { opacity: 1; transform: translate(-50%, -115%) scale(1.35); }
+  32% { transform: translate(-50%, -100%) scale(1); }
+  48% { transform: translate(-50%, -118%) scale(1.18); }
+  62% { transform: translate(-50%, -105%) scale(1.02); }
+  82% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -140%) scale(0.95); }
+}
 
 .win-banner {
   position: absolute;
@@ -1050,22 +1203,29 @@ input[type="checkbox"] { width: auto; }
   transform: translateX(-50%) translateY(-20px);
   background: linear-gradient(135deg, #f1c40f, #e67e22);
   color: #1a1c20;
-  padding: 6px 16px;
+  padding: 8px 18px;
   border-radius: 16px;
   font-weight: 700;
-  font-size: 0.85rem;
-  max-width: 90%;
+  font-size: 0.92rem;
+  max-width: min(92%, 420px);
   text-align: center;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.3s ease, transform 0.3s ease;
   z-index: 50;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.35;
 }
 .win-banner.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.win-banner.win-banner-me {
+  background: linear-gradient(135deg, #ffe566, #f39c12);
+  box-shadow: 0 0 0 2px rgba(255, 230, 120, 0.55), 0 6px 18px rgba(0,0,0,0.45);
+}
+.win-banner-amt { font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.win-banner-hand { font-weight: 600; opacity: 0.82; font-size: 0.82em; }
+.win-banner-sep { opacity: 0.55; }
+.win-banner-line.is-me .win-banner-who { font-size: 1.05em; }
 
 .modal {
   display: none;
@@ -1486,7 +1646,7 @@ input[type="checkbox"] { width: auto; }
     pointer-events: none;
   }
 
-  /* 操作区：透明浮层，圆形按钮环绕手牌 */
+  /* 操作区布局由 game-table.css（PokerNow 风格）接管 */
   #action-bar {
     position: absolute;
     left: 0;
@@ -1496,116 +1656,9 @@ input[type="checkbox"] { width: auto; }
     height: auto;
     min-height: 0;
     max-height: none;
-    padding: 0 8px var(--game-overlay-bottom);
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: center;
-    overflow: visible;
-    background: linear-gradient(180deg, transparent 0%, rgba(6,10,8,0.55) 55%, rgba(6,10,8,0.82) 100%);
     pointer-events: none;
   }
   #action-bar > * { pointer-events: auto; }
-  #action-bar .turn-indicator { display: none !important; }
-
-  /* 快捷注额：圆形弧形排布 */
-  #action-bar .bet-presets {
-    display: none;
-    position: static;
-    width: min(340px, 94vw);
-    margin: 0 0 10px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-    justify-items: center;
-  }
-  #action-bar .bet-presets.show { display: grid; }
-  #action-bar .preset-btn {
-    width: 52px;
-    height: 52px;
-    padding: 0;
-    border-radius: 50%;
-    font-size: 0.68rem;
-    font-weight: 800;
-    line-height: 1.15;
-    background: rgba(12, 18, 16, 0.72);
-    border: 1.5px solid rgba(255,255,255,0.22);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-  }
-  #action-bar .preset-btn:nth-child(1) { transform: translateY(10px); }
-  #action-bar .preset-btn:nth-child(2) { transform: translateY(2px); }
-  #action-bar .preset-btn:nth-child(3) { transform: translateY(-4px); }
-  #action-bar .preset-btn:nth-child(4) { transform: translateY(2px); }
-  #action-bar .preset-btn:nth-child(5) { transform: translateY(10px); }
-  #action-bar .preset-allin {
-    color: #ffb088;
-    border-color: rgba(255, 140, 80, 0.55);
-  }
-
-  /* 手机用快捷注额，隐藏滑条减少占位 */
-  #action-bar .raise-slider-row {
-    display: none !important;
-  }
-
-  /* 主操作：左弃 / 中加注(略高) / 右过或跟 */
-  #action-bar .actions-row {
-    display: none;
-    width: min(320px, 92vw);
-    grid-template-columns: none;
-    justify-content: center;
-    align-items: flex-end;
-    gap: 18px;
-    margin-bottom: 4px;
-  }
-  #action-bar.my-turn .actions-row {
-    display: flex;
-  }
-  #action-bar .act-btn {
-    width: 64px;
-    height: 64px;
-    min-height: 64px;
-    border-radius: 50%;
-    font-size: 0.78rem;
-    letter-spacing: 0;
-    box-shadow: 0 6px 18px rgba(0,0,0,0.4);
-    flex: 0 0 auto;
-  }
-  #action-bar .actions-row {
-    gap: 12px;
-    width: min(360px, 96vw);
-  }
-  #action-bar #btn-extend-timer {
-    order: 0;
-    width: 64px;
-    height: 64px;
-    min-height: 64px;
-  }
-  #action-bar #btn-extend-timer .extend-label { font-size: 0.88rem; }
-  #action-bar #btn-fold { order: 1; }
-  #action-bar #btn-raise {
-    order: 2;
-    width: 74px;
-    height: 74px;
-    min-height: 74px;
-    transform: translateY(-12px);
-    font-size: 0.88rem;
-  }
-  #action-bar #btn-check,
-  #action-bar #btn-call { order: 3; }
-  #action-bar #btn-allin { order: 4; display: none !important; }
-
-  #action-bar .waiting-actions {
-    width: min(280px, 80vw);
-    margin: 0 0 12px;
-  }
-  #action-bar .waiting-actions .act-btn {
-    width: 100%;
-    height: 44px;
-    min-height: 44px;
-    border-radius: 22px;
-  }
 
   .seat { width: 64px; }
   .seat-avatar-wrap, .seat-avatar {
@@ -1674,27 +1727,6 @@ input[type="checkbox"] { width: auto; }
   #hero-zone { bottom: calc(80px + var(--safe-bottom)); }
   #hero-cards .card { width: 50px; height: 70px; }
   #community-cards .card { width: 38px; height: 54px; }
-  #action-bar .act-btn {
-    width: 56px;
-    height: 56px;
-    min-height: 56px;
-    font-size: 0.72rem;
-  }
-  #action-bar #btn-extend-timer {
-    width: 56px;
-    height: 56px;
-    min-height: 56px;
-  }
-  #action-bar #btn-raise {
-    width: 64px;
-    height: 64px;
-    min-height: 64px;
-  }
-  #action-bar .preset-btn {
-    width: 46px;
-    height: 46px;
-    font-size: 0.62rem;
-  }
   .seat { width: 56px; }
   .seat-avatar-wrap, .seat-avatar { width: 38px; height: 38px; }
 }

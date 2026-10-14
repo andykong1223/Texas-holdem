@@ -5,6 +5,8 @@ let isSpectator = false;
 let soundEnabled = true;
 let audioCtx = null;
 let timerInterval = null;
+let activeTimerEnd = 0;
+let activeTimerInitialLeft = 0;
 let nextHandInterval = null;
 let hasRequestedJoin = false;
 let rebuyPending = false;
@@ -364,6 +366,30 @@ socket.on('set-spectator', (val) => {
   updateSpectatorUI();
 });
 
+socket.on('auto-sit-out', (data) => {
+  showToast(data?.message || '已自动暂离（留位）', 3200);
+  updateSitOutButton();
+});
+
+socket.on('sit-out-pending', (data) => {
+  showToast(data?.message || '本手结束后将暂离', 2800);
+  if (currentRoom) {
+    const me = currentRoom.players?.find(p => p.id === mySocketId);
+    if (me) me.wantSitOut = true;
+  }
+  updateSitOutButton();
+});
+
+socket.on('leave-seat-pending', (data) => {
+  showToast(data?.message || '本手结束后将离开座位', 2800);
+});
+
+socket.on('forced-leave-seat', (data) => {
+  isSpectator = true;
+  showToast(data?.message || '已离开座位', 4000);
+  updateSpectatorUI();
+});
+
 socket.on('joined-as-player', () => {
   isSpectator = false;
   hasRequestedJoin = false;
@@ -461,22 +487,11 @@ socket.on('hand-ended', (data) => {
     if (currentRoom) currentRoom.handHistoryCount = data.handHistoryCount;
   }
   renderTable();
-  if (data.results.some(r => r.playerId === mySocketId)) playSound('win');
+  const results = Array.isArray(data.results) ? data.results : [];
+  const iWon = results.some(r => r.playerId === mySocketId);
+  if (iWon) playSound('win');
   else playSound('fold');
-  const banner = document.getElementById('win-banner');
-  if (banner) {
-    banner.innerText = data.results.map(r => {
-      const p = currentRoom.players.find(pl => pl.id === r.playerId);
-      const handZh = HAND_NAME_ZH[r.hand] || r.hand;
-      return `${p?.name || ''} 赢 $${r.amount}（${handZh}）`;
-    }).join('  ·  ');
-    banner.classList.add('show');
-    clearTimeout(banner._timer);
-    banner._timer = setTimeout(() => {
-      banner.classList.remove('show');
-      banner.innerText = '';
-    }, 2500);
-  }
+  showHandWinBanner(results);
   // 下一手立即开始，不展示倒计时遮罩
   document.getElementById('next-hand-overlay')?.classList.add('hidden');
   // 若历史弹窗开着，刷新到最新一手
@@ -484,6 +499,53 @@ socket.on('hand-ended', (data) => {
     requestHandHistory('latest');
   }
 });
+
+/** 一手结束赢牌提示：自己 →「你赢了 $x」；他人 →「名字赢了 $x」 */
+function showHandWinBanner(results) {
+  const banner = document.getElementById('win-banner');
+  if (!banner) return;
+  if (!results.length) {
+    banner.classList.remove('show', 'win-banner-me');
+    banner.innerHTML = '';
+    return;
+  }
+
+  // 同一玩家可能拿主池+边池，合并金额
+  const totals = new Map();
+  for (const r of results) {
+    const prev = totals.get(r.playerId) || { amount: 0, name: r.playerName || '', hand: r.hand };
+    prev.amount += r.amount || 0;
+    if (r.playerName) prev.name = r.playerName;
+    if (r.hand) prev.hand = r.hand;
+    totals.set(r.playerId, prev);
+  }
+
+  const parts = [];
+  for (const [pid, info] of totals) {
+    const p = currentRoom?.players?.find(pl => pl.id === pid);
+    const isMe = pid === mySocketId;
+    const who = isMe ? '你' : (info.name || p?.name || '玩家');
+    const handZh = HAND_NAME_ZH[info.hand] || info.hand || '';
+    const handPart = handZh && handZh !== 'Win by Fold' && handZh !== 'Uncontested Side Pot'
+      ? `<span class="win-banner-hand">（${escapeHtml(handZh)}）</span>`
+      : '';
+    parts.push(
+      `<span class="win-banner-line${isMe ? ' is-me' : ''}">` +
+      `<span class="win-banner-who">${escapeHtml(who)}</span>赢了 ` +
+      `<span class="win-banner-amt">$${info.amount}</span>${handPart}` +
+      `</span>`
+    );
+  }
+
+  banner.innerHTML = parts.join('<span class="win-banner-sep"> · </span>');
+  banner.classList.toggle('win-banner-me', totals.has(mySocketId));
+  banner.classList.add('show');
+  clearTimeout(banner._timer);
+  banner._timer = setTimeout(() => {
+    banner.classList.remove('show', 'win-banner-me');
+    banner.innerHTML = '';
+  }, 5200);
+}
 
 socket.on('hand-history-page', (data) => {
   handHistoryTotal = data?.total || 0;
@@ -504,18 +566,39 @@ socket.on('chat-message', (msg) => {
   msgDiv.innerHTML = `<b>${escapeHtml(msg.sender)}:</b> ${escapeHtml(msg.message)}`;
   div.appendChild(msgDiv);
   div.scrollTop = div.scrollHeight;
+  const chatOpen = document.getElementById('chat-container')?.classList.contains('active');
+  const myName = currentRoom?.players?.find(p => p.id === mySocketId)?.name;
+  if (!chatOpen && msg.sender !== myName) bumpChatBadge();
+  if (typeof msg.seatIndex === 'number') {
+    showSeatBubble(msg.seatIndex, msg.message, { kind: 'text' });
+  }
 });
 
+function bumpChatBadge() {
+  const badge = document.getElementById('chat-badge');
+  if (!badge) return;
+  const n = (parseInt(badge.innerText, 10) || 0) + 1;
+  badge.innerText = String(n);
+  badge.classList.add('show');
+}
+
+function clearChatBadge() {
+  const badge = document.getElementById('chat-badge');
+  if (!badge) return;
+  badge.innerText = '0';
+  badge.classList.remove('show');
+}
+
 socket.on('emoji-received', (data) => {
-  const seat = document.querySelector(`.seat[data-seat="${data.seatIndex}"]`);
-  if (seat) {
-    const emoji = document.createElement('div');
-    emoji.className = 'floating-emoji';
-    emoji.innerText = data.emoji;
-    emoji.style.left = '50%';
-    emoji.style.top = '0';
-    seat.appendChild(emoji);
-    setTimeout(() => emoji.remove(), 2000);
+  if (typeof data?.seatIndex !== 'number' || !data.emoji) return;
+  showSeatBubble(data.seatIndex, data.emoji, { kind: 'emoji' });
+  const div = document.getElementById('chat-messages');
+  if (div && data.sender) {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'chat-msg chat-msg-emoji';
+    msgDiv.innerHTML = `<b>${escapeHtml(data.sender)}:</b> <span class="chat-emoji-inline">${escapeHtml(data.emoji)}</span>`;
+    div.appendChild(msgDiv);
+    div.scrollTop = div.scrollHeight;
   }
 });
 
@@ -535,34 +618,65 @@ socket.on('kicked', (data) => {
 // -------------------------
 // TIMER COUNTDOWN
 // -------------------------
+function applyTimerProgress(pct, urgent) {
+  const heroFill = document.getElementById('hero-timer-fill');
+  if (heroFill) {
+    heroFill.style.width = `${pct}%`;
+    heroFill.classList.toggle('urgent', urgent);
+  }
+  // 当前行动座位名牌底部进度条（别人读秒也能看见）
+  document.querySelectorAll('#seats-container .seat .seat-timer-fill').forEach(el => {
+    el.style.width = '0%';
+    el.classList.remove('urgent');
+  });
+  const seatFill = document.querySelector('#seats-container .seat.active .seat-timer-fill');
+  if (seatFill) {
+    seatFill.style.width = `${pct}%`;
+    seatFill.classList.toggle('urgent', urgent);
+  }
+  const ringFg = document.getElementById('timer-ring-fg');
+  if (ringFg) ringFg.style.strokeDashoffset = String(100 - pct);
+}
+
 function startTimerCountdown(endTime, isMyTurn = false) {
   const extendBtn = document.getElementById('btn-extend-timer');
-  const ringFg = document.getElementById('timer-ring-fg');
+  const heroBar = document.getElementById('hero-timer-bar');
   if (!endTime || endTime === 0) {
+    activeTimerEnd = 0;
+    activeTimerInitialLeft = 0;
     extendBtn?.classList.remove('show', 'urgent');
+    heroBar?.setAttribute('hidden', '');
+    applyTimerProgress(0, false);
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     return;
   }
+  activeTimerEnd = endTime;
   if (extendBtn) extendBtn.classList.toggle('show', !!isMyTurn);
+  if (isMyTurn) heroBar?.removeAttribute('hidden');
+  else heroBar?.setAttribute('hidden', '');
   if (timerInterval) clearInterval(timerInterval);
   const initialLeft = Math.max(0.1, (endTime - Date.now()) / 1000);
+  activeTimerInitialLeft = initialLeft;
   const update = () => {
     const timeLeft = Math.max(0, (endTime - Date.now()) / 1000);
     const pct = Math.max(0, Math.min(100, (timeLeft / initialLeft) * 100));
-    // pathLength=100：dashoffset 越大剩余弧越短
-    if (ringFg) ringFg.style.strokeDashoffset = String(100 - pct);
-    extendBtn?.classList.toggle('urgent', timeLeft < 5);
-    if (timeLeft < 5) {
+    const urgent = timeLeft < 5;
+    applyTimerProgress(pct, urgent);
+    extendBtn?.classList.toggle('urgent', urgent);
+    if (urgent) {
       const wholeSec = Math.ceil(timeLeft);
       if (timeLeft > 0 && wholeSec !== update._lastTick) {
         update._lastTick = wholeSec;
-        playSound('tick');
+        if (isMyTurn) playSound('tick');
       }
     }
     if (timeLeft <= 0) {
       clearInterval(timerInterval);
       timerInterval = null;
+      activeTimerEnd = 0;
       extendBtn?.classList.remove('show', 'urgent');
+      heroBar?.setAttribute('hidden', '');
+      applyTimerProgress(0, false);
     }
   };
   update();
@@ -632,6 +746,7 @@ function updateSpectatorUI() {
   const rebuyBtn = rebuyArea.querySelector('button');
   const chatInputRow = document.getElementById('chat-input-row');
   const chatNotice = document.getElementById('chat-spectator-notice');
+  updateSitOutButton();
 
   if (isSpectator) {
     area.style.display = 'block';
@@ -825,8 +940,53 @@ function avatarInitials(name) {
 }
 
 function cardHtml(c, extraClass = '') {
+  if (!c) return `<div class="card card-back ${extraClass}"></div>`;
   const isRed = RED_SUITS[c.s];
-  return `<div class="card ${isRed ? 'red' : ''} ${extraClass}"><div class="card-rank">${displayRank(c.r)}</div><div class="card-suit">${SUIT_SYMBOLS[c.s]}</div></div>`;
+  const suit = SUIT_SYMBOLS[c.s] || '';
+  return `<div class="card ${isRed ? 'red' : ''} ${extraClass}"><div class="card-rank">${displayRank(c.r)}</div><div class="card-suit-center" aria-hidden="true">${suit}</div></div>`;
+}
+
+function cardLabel(c) {
+  if (!c) return '';
+  return `${displayRank(c.r)}${SUIT_SYMBOLS[c.s] || ''}`;
+}
+
+/** 摊牌阶段：弃牌者请求秀牌 */
+function requestShowCards(which) {
+  if (!socket?.connected) return;
+  if (which === 'all') socket.emit('show-cards', { all: true });
+  else socket.emit('show-cards', { index: which });
+  playSound('click');
+}
+
+function updateShowCardsBar(me) {
+  const bar = document.getElementById('show-cards-bar');
+  if (!bar) return;
+  const isShowdown = currentRoom?.gameState?.status === 'playing'
+    && currentRoom.gameState.bettingRound === 'showdown';
+  const mask = me?.shownHoleMask || [false, false];
+  const cards = me?.holeCards || [];
+  // 仅弃牌且还有未秀出的牌时显示；池内玩家已自动秀完
+  const canOptShow = !!(isShowdown && me && !isSpectator && me.folded
+    && cards.length >= 2 && !(mask[0] && mask[1]));
+  bar.hidden = !canOptShow;
+  document.getElementById('action-bar')?.classList.toggle('show-cards-open', canOptShow);
+  if (!canOptShow) return;
+
+  const btn0 = document.getElementById('show-card-btn-0');
+  const btn1 = document.getElementById('show-card-btn-1');
+  if (btn0) {
+    btn0.textContent = cardLabel(cards[0]) || '—';
+    btn0.disabled = !!mask[0];
+    btn0.classList.toggle('is-shown', !!mask[0]);
+    btn0.classList.toggle('red', !!(cards[0] && RED_SUITS[cards[0].s]));
+  }
+  if (btn1) {
+    btn1.textContent = cardLabel(cards[1]) || '—';
+    btn1.disabled = !!mask[1];
+    btn1.classList.toggle('is-shown', !!mask[1]);
+    btn1.classList.toggle('red', !!(cards[1] && RED_SUITS[cards[1].s]));
+  }
 }
 
 // -------------------------
@@ -965,21 +1125,98 @@ function getMinRaiseTotal() {
   return (currentRoom?.gameState?.currentBet || 0) + (currentRoom?.gameState?.minRaise || 0);
 }
 
-function setRaisePreset(frac) {
+/** 计算底池比例对应的「总下注额」（桌上已有注 + 本次要推入的筹码） */
+function calcPotBetTotal(frac) {
+  if (!currentRoom) return 0;
+  const me = currentRoom.players.find(p => p.id === mySocketId);
+  if (!me) return 0;
+  const pot = getTotalPot() || currentRoom.settings.bigBlind * 2;
+  const toCall = Math.max(0, (currentRoom.gameState.currentBet || 0) - (me.currentBet || 0));
+  // 先跟平再按有效底池比例加注：跟注后底池 = pot + toCall
+  const potAfterCall = pot + toCall;
+  const raiseSize = Math.max(0, Math.round(potAfterCall * frac));
+  const target = (me.currentBet || 0) + toCall + raiseSize;
+  const minRaise = getMinRaiseTotal();
+  const maxRaise = (me.currentBet || 0) + me.chips;
+  return Math.min(Math.max(target, minRaise), maxRaise);
+}
+
+function setRaiseAmount(total) {
   if (!currentRoom) return;
   const me = currentRoom.players.find(p => p.id === mySocketId);
   if (!me) return;
-  const pot = getTotalPot() || currentRoom.settings.bigBlind * 2;
   const minRaise = getMinRaiseTotal();
-  const toCall = Math.max(0, currentRoom.gameState.currentBet - (me.currentBet || 0));
-  // 目标：当前已投入 + 跟注后的加注额 ≈ 底池比例（相对底池加注）
-  let target = Math.max(minRaise, currentRoom.gameState.currentBet + Math.round(pot * frac));
-  target = Math.min(target, (me.currentBet || 0) + me.chips);
-  if (target < minRaise) target = Math.min(minRaise, (me.currentBet || 0) + me.chips);
-  document.getElementById('raise-amount').value = target;
+  const maxRaise = (me.currentBet || 0) + me.chips;
+  const clamped = Math.min(Math.max(total, minRaise), maxRaise);
+  const amountEl = document.getElementById('raise-amount');
+  if (amountEl) amountEl.value = String(clamped);
   syncRaiseSlider();
-  // 若只是跟注级别且 frac 很小，仍填最低加注
-  void toCall;
+  updateRaiseBetDisplay();
+}
+
+function setRaisePreset(frac) {
+  setRaiseAmount(calcPotBetTotal(frac));
+}
+
+function applyBetPreset(frac, btn) {
+  setRaisePreset(frac);
+  highlightPresetBtn(btn);
+  playSound('click');
+}
+
+function applyMinRaise(btn) {
+  setRaiseMin();
+  highlightPresetBtn(btn);
+  playSound('click');
+}
+
+function applyBetAllIn(btn) {
+  setRaiseAllIn();
+  highlightPresetBtn(btn);
+  playSound('click');
+}
+
+function highlightPresetBtn(btn) {
+  document.querySelectorAll('#bet-presets .preset-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+}
+
+function setRaiseMin() {
+  setRaiseAmount(getMinRaiseTotal());
+}
+
+function setRaiseAllIn() {
+  if (!currentRoom) return;
+  const me = currentRoom.players.find(p => p.id === mySocketId);
+  if (!me) return;
+  setRaiseAmount((me.currentBet || 0) + me.chips);
+}
+
+function nudgeRaise(dir) {
+  if (!currentRoom) return;
+  const bb = Math.max(1, currentRoom.settings.bigBlind || 1);
+  const cur = parseInt(document.getElementById('raise-amount')?.value, 10) || getMinRaiseTotal();
+  setRaiseAmount(cur + dir * bb);
+  highlightPresetBtn(null);
+}
+
+function updateRaiseBetDisplay() {
+  const amountEl = document.getElementById('raise-amount');
+  const valueEl = document.getElementById('raise-bet-value');
+  const bbEl = document.getElementById('raise-bet-bb');
+  const confirmBtn = document.getElementById('btn-raise-confirm');
+  if (!amountEl) return;
+  const amt = parseInt(amountEl.value, 10) || 0;
+  const bb = Math.max(1, currentRoom?.settings?.bigBlind || 1);
+  if (valueEl) valueEl.textContent = String(amt);
+  if (bbEl) {
+    const bbVal = amt / bb;
+    bbEl.textContent = `${bbVal.toFixed(bbVal >= 100 || amt % bb === 0 ? 0 : 1)}BB`;
+  }
+  const me = currentRoom?.players?.find(p => p.id === mySocketId);
+  const toCall = Math.max(0, (currentRoom?.gameState?.currentBet || 0) - (me?.currentBet || 0));
+  const verb = toCall <= 0 ? 'BET' : 'RAISE';
+  if (confirmBtn) confirmBtn.innerText = verb;
 }
 
 function syncRaiseSlider() {
@@ -990,11 +1227,14 @@ function syncRaiseSlider() {
   if (!me) return;
   const minRaise = getMinRaiseTotal();
   const maxRaise = (me.currentBet || 0) + me.chips;
-  const val = parseInt(amountEl.value) || minRaise;
+  const val = parseInt(amountEl.value, 10) || minRaise;
   const span = Math.max(1, maxRaise - minRaise);
+  amountEl.min = minRaise;
+  amountEl.max = maxRaise;
   slider.min = 0;
   slider.max = 100;
   slider.value = Math.round(((Math.min(Math.max(val, minRaise), maxRaise) - minRaise) / span) * 100);
+  updateRaiseBetDisplay();
 }
 
 function onRaiseSlider() {
@@ -1003,9 +1243,37 @@ function onRaiseSlider() {
   if (!me) return;
   const minRaise = getMinRaiseTotal();
   const maxRaise = (me.currentBet || 0) + me.chips;
-  const pct = parseInt(document.getElementById('raise-slider').value) || 0;
+  const pct = parseInt(document.getElementById('raise-slider').value, 10) || 0;
   const amount = Math.round(minRaise + (maxRaise - minRaise) * (pct / 100));
   document.getElementById('raise-amount').value = amount;
+  highlightPresetBtn(null);
+  updateRaiseBetDisplay();
+}
+
+function openRaisePanel() {
+  if (!currentRoom) return;
+  const me = currentRoom.players.find(p => p.id === mySocketId);
+  if (!me || me.folded || me.allIn || isSpectator) return;
+  const isMyTurn = currentRoom.gameState.currentPlayerIndex === me.seatIndex
+    && currentRoom.gameState.status === 'playing';
+  if (!isMyTurn) return;
+  setRaiseMin();
+  highlightPresetBtn(null);
+  updateRaiseBetDisplay();
+  document.getElementById('action-bar')?.classList.add('raise-open');
+}
+
+function closeRaisePanel() {
+  document.getElementById('action-bar')?.classList.remove('raise-open');
+  highlightPresetBtn(null);
+}
+
+function confirmRaise() {
+  const amount = parseInt(document.getElementById('raise-amount')?.value, 10);
+  if (!amount) return alert('请选择加注金额');
+  closeRaisePanel();
+  socket.emit('action', { action: 'raise', amount });
+  playSound('click');
 }
 
 /** 按庄家顺时针计算本手位置标签（小盲/大盲/枪口等） */
@@ -1097,42 +1365,95 @@ function computePositionMap(room) {
 }
 
 function cardsSignature(cards) {
-  return (cards || []).map(c => `${c.r}${c.s}`).join('|');
+  return (cards || []).map(c => (c && c.r != null ? `${c.r}${c.s}` : '_')).join('|');
 }
 
 /**
- * WePoker 风格站位（竖屏）：自己在底中，其余绕椭圆疏密均匀。
- * relIndex 0 = 自己，逆时针先往左。坐标为桌面比例。
+ * PokerNow PC：横向椭圆；手机：竖向跑道（底1 / 顶1 / 左右列）。
+ * relIndex 0 = 自己在底边，逆时针先往左。坐标为桌面比例。
  */
-const WEPOKER_SEAT_LAYOUTS = {
-  2: [[0.50, 0.88], [0.50, 0.12]],
-  3: [[0.50, 0.88], [0.14, 0.40], [0.86, 0.40]],
-  4: [[0.50, 0.88], [0.12, 0.48], [0.50, 0.12], [0.88, 0.48]],
-  5: [[0.50, 0.88], [0.14, 0.62], [0.20, 0.22], [0.80, 0.22], [0.86, 0.62]],
-  6: [[0.50, 0.88], [0.14, 0.68], [0.14, 0.32], [0.50, 0.12], [0.86, 0.32], [0.86, 0.68]],
+const POKERNOW_SEAT_LAYOUTS = {
+  2: [[0.50, 0.90], [0.50, 0.10]],
+  3: [[0.50, 0.90], [0.14, 0.42], [0.86, 0.42]],
+  4: [[0.50, 0.90], [0.12, 0.50], [0.50, 0.10], [0.88, 0.50]],
+  5: [[0.50, 0.90], [0.14, 0.62], [0.22, 0.18], [0.78, 0.18], [0.86, 0.62]],
+  6: [
+    [0.38, 0.90], [0.12, 0.55], [0.22, 0.16],
+    [0.62, 0.10], [0.88, 0.55], [0.78, 0.90]
+  ],
   7: [
-    [0.50, 0.88], [0.14, 0.70], [0.12, 0.40], [0.28, 0.14],
-    [0.72, 0.14], [0.88, 0.40], [0.86, 0.70]
+    [0.50, 0.90], [0.16, 0.72], [0.10, 0.40], [0.28, 0.12],
+    [0.72, 0.12], [0.90, 0.40], [0.84, 0.72]
   ],
   8: [
-    [0.50, 0.88], [0.16, 0.72], [0.10, 0.48], [0.18, 0.20],
-    [0.50, 0.10], [0.82, 0.20], [0.90, 0.48], [0.84, 0.72]
+    [0.38, 0.90], [0.14, 0.70], [0.10, 0.40], [0.22, 0.14],
+    [0.62, 0.10], [0.86, 0.20], [0.90, 0.50], [0.78, 0.90]
   ],
   9: [
-    [0.50, 0.88],
-    [0.16, 0.74],
-    [0.08, 0.50],
-    [0.16, 0.26],
-    [0.34, 0.10],
-    [0.66, 0.10],
-    [0.84, 0.26],
-    [0.92, 0.50],
-    [0.84, 0.74]
+    [0.50, 0.90],
+    [0.22, 0.86],
+    [0.08, 0.58],
+    [0.12, 0.28],
+    [0.32, 0.10],
+    [0.68, 0.10],
+    [0.88, 0.28],
+    [0.92, 0.58],
+    [0.78, 0.86]
+  ],
+  10: [
+    [0.62, 0.89], [0.38, 0.89], [0.17, 0.73], [0.12, 0.47], [0.17, 0.21],
+    [0.38, 0.09], [0.62, 0.09], [0.83, 0.21], [0.90, 0.47], [0.84, 0.73]
   ]
 };
 
-function seatPointFromWepoker(relIndex, maxPlayers, w, h) {
-  const layout = WEPOKER_SEAT_LAYOUTS[maxPlayers];
+/** 手机竖屏：底1 + 左列 + 顶1 + 右列（对齐 PokerNow App 几何） */
+const POKERNOW_MOBILE_SEAT_LAYOUTS = {
+  2: [[0.50, 0.90], [0.50, 0.12]],
+  3: [[0.50, 0.90], [0.14, 0.45], [0.86, 0.45]],
+  4: [[0.50, 0.90], [0.14, 0.55], [0.50, 0.12], [0.86, 0.55]],
+  5: [[0.50, 0.90], [0.14, 0.68], [0.14, 0.32], [0.86, 0.32], [0.86, 0.68]],
+  6: [
+    [0.50, 0.90], [0.14, 0.70], [0.14, 0.38],
+    [0.50, 0.12], [0.86, 0.38], [0.86, 0.70]
+  ],
+  7: [
+    [0.50, 0.90], [0.14, 0.74], [0.14, 0.50], [0.14, 0.26],
+    [0.50, 0.12], [0.86, 0.38], [0.86, 0.70]
+  ],
+  8: [
+    [0.50, 0.90], [0.14, 0.76], [0.14, 0.54], [0.14, 0.30],
+    [0.50, 0.12], [0.86, 0.30], [0.86, 0.54], [0.86, 0.76]
+  ],
+  9: [
+    // 底1 + 左3 + 顶1 + 右3
+    [0.50, 0.91],
+    [0.14, 0.76],
+    [0.14, 0.54],
+    [0.14, 0.30],
+    [0.50, 0.11],
+    [0.86, 0.30],
+    [0.86, 0.50],
+    [0.86, 0.70],
+    [0.86, 0.88]
+  ],
+  10: [
+    // 底1 + 左4 + 顶1 + 右4（PokerNow 手机实测）
+    [0.50, 0.92],
+    [0.14, 0.80],
+    [0.14, 0.64],
+    [0.14, 0.40],
+    [0.14, 0.24],
+    [0.50, 0.11],
+    [0.86, 0.24],
+    [0.86, 0.40],
+    [0.86, 0.64],
+    [0.86, 0.80]
+  ]
+};
+
+function seatPointFromPokernow(relIndex, maxPlayers, w, h, isMobile = false) {
+  const layouts = isMobile ? POKERNOW_MOBILE_SEAT_LAYOUTS : POKERNOW_SEAT_LAYOUTS;
+  const layout = layouts[maxPlayers] || POKERNOW_SEAT_LAYOUTS[maxPlayers];
   if (!layout || !layout[relIndex]) return null;
   const [fx, fy] = layout[relIndex];
   const x = fx * w;
@@ -1260,20 +1581,40 @@ function updateHeroCardsDom(me) {
   }
 }
 
-/** 手机端自己座位隐藏，筹码改显示在手牌区 */
+/** 自己名牌：昵称 + 筹码；下注筹码圆点；庄家钮 */
 function updateHeroStackDom(me) {
   const el = document.getElementById('hero-stack');
+  const betChip = document.getElementById('hero-bet-chip');
+  const dealerEl = document.getElementById('hero-dealer');
   if (!el) return;
   if (!me || isSpectator) {
-    el.textContent = '';
+    el.innerHTML = '';
     el.classList.remove('show');
+    if (betChip) betChip.hidden = true;
+    if (dealerEl) dealerEl.hidden = true;
     return;
   }
-  const text = `${me.name || '我'} · ${formatChips(me.chips)}`;
-  if (el.dataset.stackKey === text) return;
-  el.dataset.stackKey = text;
-  el.textContent = text;
-  el.classList.add('show');
+  const name = escapeHtml(me.name || '我');
+  const chips = formatChips(me.chips);
+  const key = `${me.name}|${me.chips}|${me.currentBet || 0}`;
+  if (el.dataset.stackKey !== key) {
+    el.dataset.stackKey = key;
+    el.innerHTML = `<div class="hero-name">${name}</div><div class="hero-chips">${chips}</div>`;
+    el.classList.add('show');
+  }
+  if (betChip) {
+    const bet = me.currentBet || 0;
+    if (bet > 0) {
+      betChip.hidden = false;
+      betChip.textContent = formatChips(bet);
+    } else {
+      betChip.hidden = true;
+    }
+  }
+  if (dealerEl) {
+    const isDealer = currentRoom?.gameState?.dealerIndex === me.seatIndex;
+    dealerEl.hidden = !isDealer;
+  }
 }
 
 function updateCommunityCardsDom() {
@@ -1300,9 +1641,9 @@ function renderTable() {
   const positionMap = computePositionMap(currentRoom);
   const meForSeat = currentRoom.players.find(p => p.id === mySocketId);
   const anchorSeat = (meForSeat?.seatIndex ?? 0);
-  const seatHalfW = isMobileLayout ? 28 : 43;
-  const seatHalfH = isMobileLayout ? 38 : 54;
-  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:wepoker`;
+  const seatHalfW = isMobileLayout ? 50 : 64;
+  const seatHalfH = isMobileLayout ? 28 : 26;
+  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:pn-v2`;
   const layoutChanged = seatsContainer.dataset.layoutKey !== layoutKey;
   if (layoutChanged) {
     seatsContainer.dataset.layoutKey = layoutKey;
@@ -1310,16 +1651,15 @@ function renderTable() {
   }
 
   for (let seatIdx = 0; seatIdx < maxPlayers; seatIdx++) {
-    // 相对自己旋转：自己在底边中点；手机用手调椭圆站位，桌面用等弧长
+    // 相对自己旋转：自己在底边；手机用竖屏站位，PC 用横屏站位
     const relIndex = ((seatIdx - anchorSeat) % maxPlayers + maxPlayers) % maxPlayers;
     const t = relIndex / maxPlayers;
-    const pt = (isMobileLayout && seatPointFromWepoker(relIndex, maxPlayers, tableWidth, tableHeight))
-      || stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.14 : 0.09);
+    const pt = seatPointFromPokernow(relIndex, maxPlayers, tableWidth, tableHeight, isMobileLayout)
+      || stadiumSeatPoint(t, tableWidth, tableHeight, isMobileLayout ? 0.12 : 0.1);
     const x = pt.x;
     const y = pt.y;
-    // 注额往桌心偏一点（沿法向反方向）
-    const betOffX = Math.round(-(pt.nx || 0) * 26);
-    const betOffY = Math.round(-(pt.ny || 0) * 22);
+    const betOffX = Math.round(-(pt.nx || 0) * 22);
+    const betOffY = Math.round(-(pt.ny || 0) * 18);
 
     let seat = seatsContainer.querySelector(`.seat[data-seat="${seatIdx}"]`);
     if (!seat) {
@@ -1328,24 +1668,19 @@ function renderTable() {
       seatsContainer.appendChild(seat);
     }
     const p = seatMap[seatIdx];
-    // 自己的座位略往桌心收，避免名字/头像压到底部手牌上
     const isMeSeat = p && p.id === mySocketId;
-    const nudgeY = isMeSeat ? -Math.round(seatHalfH * 0.35) : 0;
-    // 右侧座位手牌放头像左侧，避免贴出屏幕
     const cardsOnLeft = x >= tableWidth * 0.5;
     seat.style.left = (x - seatHalfW) + 'px';
-    seat.style.top = (y - seatHalfH + nudgeY) + 'px';
+    seat.style.top = (y - seatHalfH) + 'px';
 
     if (!p) {
-      const emptyKey = 'empty';
+      const emptyKey = `empty:${relIndex}`;
       if (seat.dataset.renderKey !== emptyKey) {
         seat.dataset.renderKey = emptyKey;
         seat.className = 'seat empty';
         seat.innerHTML = `
-          <div class="seat-avatar-wrap">
-            <div class="seat-avatar" style="background:#1a2a22;border-style:dashed;">+</div>
-          </div>
-          <div class="seat-info"><div class="seat-name">空位</div><div class="seat-chips">&nbsp;</div></div>
+          <span class="seat-num">${relIndex + 1}</span>
+          <div class="seat-sit">SIT</div>
         `;
       }
       seat.classList.toggle('cards-left', cardsOnLeft);
@@ -1354,8 +1689,10 @@ function renderTable() {
 
     const isShowdown = currentRoom.gameState.status === 'playing'
       && currentRoom.gameState.bettingRound === 'showdown';
-    const showHoleFaceUp = !!(p.holeCards && p.holeCards.length > 0 && !p.folded);
-    const cardsRevealed = isShowdown && showHoleFaceUp;
+    const mask = p.shownHoleMask || [false, false];
+    const anyShown = !!(mask[0] || mask[1]);
+    const hasHoleSlots = Array.isArray(p.holeCards) && p.holeCards.length > 0;
+    const cardsRevealed = isShowdown && (anyShown || (!p.folded && hasHoleSlots));
     const isActive = currentRoom.gameState.currentPlayerIndex === p.seatIndex
       && !p.folded
       && !p.disconnected
@@ -1364,7 +1701,8 @@ function renderTable() {
     const pos = positionMap[p.seatIndex];
     const renderKey = [
       p.id, p.chips, p.currentBet, p.folded, p.allIn, p.disconnected, p.isSittingOut,
-      isActive, cardsRevealed, cardsSignature(p.holeCards), pos?.code || '',
+      isActive, cardsRevealed, cardsSignature(p.holeCards), (mask[0] ? 1 : 0) + (mask[1] ? 2 : 0),
+      pos?.code || '',
       currentRoom.gameState.dealerIndex === p.seatIndex ? 'D' : '',
       cardsOnLeft ? 'L' : 'R'
     ].join(':');
@@ -1385,18 +1723,26 @@ function renderTable() {
 
     let cardsHtml = `<div class="seat-cards${cardsRevealed ? ' revealed' : ''}">`;
     if (p.id !== mySocketId) {
-      if (showHoleFaceUp) {
-        p.holeCards.forEach(c => { cardsHtml += cardHtml(c); });
+      if (isShowdown && hasHoleSlots) {
+        // 摊牌：已秀正面，未秀牌背
+        p.holeCards.forEach((c, i) => {
+          cardsHtml += c ? cardHtml(c) : '<div class="card card-back"></div>';
+        });
       } else if (!p.folded && !p.disconnected && currentRoom.gameState.status === 'playing' && !isShowdown) {
         cardsHtml += '<div class="card card-back"></div><div class="card card-back"></div>';
       }
-    } else if (cardsRevealed) {
-      p.holeCards.forEach(c => { cardsHtml += cardHtml(c); });
+    } else if (isShowdown && hasHoleSlots && anyShown) {
+      // 自己座位：仅在有对外秀牌时重复展示（主要看 hero 区）
+      p.holeCards.forEach((c, i) => {
+        if (mask[i]) cardsHtml += cardHtml(c);
+        else cardsHtml += '<div class="card card-back"></div>';
+      });
     }
     cardsHtml += '</div>';
 
     let statusTag = '';
-    if (p.disconnected) statusTag = '<div class="seat-status-tag">暂离</div>';
+    if (p.disconnected) statusTag = '<div class="seat-status-tag">断线</div>';
+    else if (p.isSittingOut) statusTag = '<div class="seat-status-tag">暂离</div>';
     else if (p.allIn) statusTag = '<div class="seat-status-tag">全下</div>';
     else if (p.folded) statusTag = '<div class="seat-status-tag">弃牌</div>';
 
@@ -1408,19 +1754,17 @@ function renderTable() {
       || !!pos?.isDealer;
 
     seat.innerHTML = `
+      <span class="seat-num">${relIndex + 1}</span>
       ${statusTag}
-      <div class="seat-avatar-wrap">
-        ${posHtml}
-        <div class="seat-timer-ring"></div>
-        <div class="seat-avatar" style="background:${avatarColor(p.name)}">${escapeHtml(avatarInitials(p.name))}</div>
-        ${showDealerChip ? '<div class="dealer-button">D</div>' : ''}
-        ${cardsHtml}
-      </div>
+      ${posHtml}
+      ${cardsHtml}
       <div class="seat-info">
-        <div class="seat-name">${escapeHtml(p.name)}${p.id === mySocketId ? ' ·我' : ''}${p.disconnected ? ' ·暂离' : ''}</div>
+        <div class="seat-name">${escapeHtml(p.name)}${p.id === mySocketId ? ' ·我' : ''}</div>
         <div class="seat-chips">${formatChips(p.chips)}</div>
+        <div class="seat-timer-bar" aria-hidden="true"><div class="seat-timer-fill"></div></div>
       </div>
-      ${p.currentBet > 0 ? `<div class="seat-bet" style="left:calc(50% + ${betOffX}px); top:calc(50% + ${betOffY}px); transform:translate(-50%,-50%); bottom:auto;">${formatChips(p.currentBet)}</div>` : ''}
+      ${showDealerChip ? '<div class="dealer-button">D</div>' : ''}
+      ${p.currentBet > 0 ? `<div class="seat-bet">${formatChips(p.currentBet)}</div>` : ''}
     `;
   }
 
@@ -1433,11 +1777,12 @@ function renderTable() {
     : '';
   if (potDiv.textContent !== potText) potDiv.textContent = potText;
 
-  // 自己的大牌（底部 hero）+ 筹码 + 当前牌型
+  // 自己的大牌（底部 hero）+ 筹码 + 当前牌型 + 秀牌栏
   const me = currentRoom.players.find(p => p.id === mySocketId);
   updateHeroCardsDom(me);
   updateHeroStackDom(me);
   updateHeroHandRank(me);
+  updateShowCardsBar(me);
 
   // 开局 / 下一手
   const startOverlay = document.getElementById('start-overlay');
@@ -1476,8 +1821,6 @@ function renderTable() {
   // 行动区
   const turnIndicator = document.getElementById('turn-indicator');
   const actionStatus = document.getElementById('action-status');
-  const betPresets = document.getElementById('bet-presets');
-  const raiseRow = document.getElementById('raise-slider-row');
   const actionBar = document.getElementById('action-bar');
   const isMyTurn = currentRoom.gameState.currentPlayerIndex === me?.seatIndex
     && !me?.folded
@@ -1494,38 +1837,37 @@ function renderTable() {
   const waitingActions = document.getElementById('waiting-actions');
   const isWaitingLobby = currentRoom.gameState.status === 'waiting';
 
-  const isMobileUi = window.innerWidth <= 900;
+  const heroZone = document.getElementById('hero-zone');
   if (actionBar) {
     actionBar.classList.toggle('in-hand', !isWaitingLobby);
     actionBar.classList.toggle('my-turn', !!isMyTurn);
+    if (!isMyTurn) actionBar.classList.remove('raise-open');
   }
+  if (heroZone) heroZone.classList.toggle('is-my-turn', !!isMyTurn);
 
   if (waitingActions) waitingActions.classList.toggle('show', isWaitingLobby);
-  // 手机用 CSS 控制圆形按钮显隐；桌面仍用 display
-  if (actionsRow) {
-    if (isMobileUi) actionsRow.style.display = '';
-    else actionsRow.style.display = isWaitingLobby ? 'none' : 'flex';
-  }
+  if (actionsRow) actionsRow.style.display = '';
 
   if (isMyTurn) {
-    turnIndicator.classList.remove('hidden');
-    actionStatus.innerText = '';
-    betPresets.classList.add('show');
-    if (!isMobileUi) raiseRow.classList.add('show');
-    else raiseRow.classList.remove('show');
+    turnIndicator?.classList.remove('hidden');
+    if (actionStatus) actionStatus.innerText = '';
   } else {
-    turnIndicator.classList.add('hidden');
-    betPresets.classList.remove('show');
-    raiseRow.classList.remove('show');
-    if (currentRoom.gameState.status === 'playing' && currentRoom.gameState.bettingRound !== 'showdown') {
-      const currentPlayer = currentRoom.players.find(p => p.seatIndex === currentRoom.gameState.currentPlayerIndex);
-      actionStatus.innerText = currentPlayer ? `等待 ${currentPlayer.name} 行动…` : '';
-    } else if (currentRoom.gameState.bettingRound === 'showdown') {
-      actionStatus.innerText = '本手结束 — 等待房主开下一手…';
-    } else if (isWaitingLobby) {
-      actionStatus.innerText = '分享房间号，喊朋友上车';
-    } else {
-      actionStatus.innerText = '';
+    turnIndicator?.classList.add('hidden');
+    closeRaisePanel();
+    highlightPresetBtn(null);
+    const amountElClear = document.getElementById('raise-amount');
+    if (amountElClear) amountElClear.value = '0';
+    if (actionStatus) {
+      if (currentRoom.gameState.status === 'playing' && currentRoom.gameState.bettingRound !== 'showdown') {
+        const currentPlayer = currentRoom.players.find(p => p.seatIndex === currentRoom.gameState.currentPlayerIndex);
+        actionStatus.innerText = currentPlayer ? `等待 ${currentPlayer.name} 行动…` : '';
+      } else if (currentRoom.gameState.bettingRound === 'showdown') {
+        actionStatus.innerText = '本手结束 — 等待下一手…';
+      } else if (isWaitingLobby) {
+        actionStatus.innerText = '分享房间号，喊朋友上车';
+      } else {
+        actionStatus.innerText = '';
+      }
     }
   }
 
@@ -1538,34 +1880,61 @@ function renderTable() {
   btnCheck.disabled = disableActions || !canCheck;
   btnCall.disabled = disableActions || canCheck;
   btnRaise.disabled = disableActions;
-  btnAllin.disabled = disableActions;
+  if (btnAllin) btnAllin.disabled = disableActions;
 
-  btnCheck.classList.toggle('hidden-btn', !canCheck);
-  btnCall.classList.toggle('hidden-btn', canCheck);
+  // PokerNow：四键始终可见，不可用置灰
+  btnCheck.classList.toggle('is-disabled', disableActions || !canCheck);
+  btnCall.classList.toggle('is-disabled', disableActions || canCheck);
+  btnRaise.classList.toggle('is-disabled', disableActions);
+  btnFold.classList.toggle('is-disabled', disableActions);
+  btnCheck.classList.remove('hidden-btn');
+  btnCall.classList.remove('hidden-btn');
+  btnRaise.classList.remove('hidden-btn');
+  btnFold.classList.remove('hidden-btn');
 
-  btnCall.innerText = actualCall > 0 ? `跟注 ${formatChips(actualCall)}` : '跟注';
-  btnCheck.innerText = '过牌';
-  btnRaise.innerText = (currentRoom.gameState.currentBet || 0) > 0 ? '加注' : '下注';
+  btnFold.innerText = 'FOLD';
+  btnCheck.innerText = 'CHECK';
+  btnCall.innerText = actualCall > 0 ? `CALL ${formatChips(actualCall)}` : 'CALL';
+  btnRaise.innerText = canCheck ? 'BET' : 'RAISE';
 
   if (isMyTurn) {
     const minRaise = getMinRaiseTotal();
+    const maxRaise = (me.currentBet || 0) + me.chips;
     const amountEl = document.getElementById('raise-amount');
-    amountEl.min = minRaise;
-    amountEl.placeholder = `${minRaise}`;
-    if (!amountEl.value || parseInt(amountEl.value) < minRaise) {
-      amountEl.value = Math.min(minRaise, (me.currentBet || 0) + me.chips);
+    if (amountEl) {
+      amountEl.min = minRaise;
+      amountEl.max = maxRaise;
+      const cur = parseInt(amountEl.value, 10) || 0;
+      if (!cur || cur < minRaise) {
+        amountEl.value = String(Math.min(minRaise, maxRaise));
+      } else if (cur > maxRaise) {
+        amountEl.value = String(maxRaise);
+      }
     }
-    syncRaiseSlider();
+    if (actionBar?.classList.contains('raise-open')) {
+      syncRaiseSlider();
+      updateRaiseBetDisplay();
+    }
   }
 
+  const extendBtn = document.getElementById('btn-extend-timer');
   if (currentRoom.gameState.timerEnd && currentRoom.gameState.status === 'playing' && currentRoom.settings.timerEnabled) {
     const endTime = currentRoom.gameState.timerEnd;
     if (endTime > Date.now()) {
       startTimerCountdown(endTime, isMyTurn);
+    } else {
+      extendBtn?.classList.toggle('show', !!isMyTurn);
+      extendBtn?.classList.remove('urgent');
+      document.getElementById('hero-timer-bar')?.setAttribute('hidden', '');
+      applyTimerProgress(0, false);
     }
   } else {
-    document.getElementById('btn-extend-timer')?.classList.remove('show', 'urgent');
+    extendBtn?.classList.toggle('show', !!isMyTurn);
+    extendBtn?.classList.remove('urgent');
+    document.getElementById('hero-timer-bar')?.setAttribute('hidden', '');
+    applyTimerProgress(0, false);
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    activeTimerEnd = 0;
   }
 }
 
@@ -1589,10 +1958,7 @@ function sendAction(action) {
 }
 
 function sendRaise() {
-  const amount = parseInt(document.getElementById('raise-amount').value);
-  if (!amount) return alert('请输入加注金额');
-  socket.emit('action', { action: 'raise', amount });
-  playSound('click');
+  openRaisePanel();
 }
 
 function sendAllIn() {
@@ -1618,6 +1984,59 @@ function leaveRoom() {
   } else {
     location.reload();
   }
+}
+
+function updateSitOutButton() {
+  const btn = document.getElementById('btn-sit-out');
+  const leaveBtn = document.getElementById('btn-leave-seat');
+  if (!btn) return;
+  if (isSpectator) {
+    btn.style.display = 'none';
+    if (leaveBtn) leaveBtn.style.display = 'none';
+    return;
+  }
+  btn.style.display = '';
+  if (leaveBtn) leaveBtn.style.display = '';
+  const me = currentRoom?.players?.find(p => p.id === mySocketId);
+  const pending = !!me?.wantSitOut;
+  const sitting = !!me?.isSittingOut;
+  if (sitting) {
+    btn.textContent = '回桌';
+    btn.title = '取消暂离，下下手继续打牌';
+    btn.classList.add('btn-sit-in');
+  } else if (pending) {
+    btn.textContent = '取消暂离';
+    btn.title = '取消本手结束后的暂离';
+    btn.classList.add('btn-sit-in');
+  } else {
+    btn.textContent = '暂离';
+    btn.title = '暂离留位；连续2手未操作也会自动暂离';
+    btn.classList.remove('btn-sit-in');
+  }
+}
+
+function toggleSitOut() {
+  if (isSpectator || !socket?.connected) return;
+  const me = currentRoom?.players?.find(p => p.id === mySocketId);
+  if (!me) return;
+  if (me.isSittingOut) {
+    socket.emit('sit-in');
+    return;
+  }
+  if (me.wantSitOut) {
+    // 取消待生效的暂离：用 sit-in 清掉标记
+    socket.emit('sit-in');
+    return;
+  }
+  socket.emit('sit-out');
+}
+
+function leaveSeat() {
+  if (isSpectator || !socket?.connected) return;
+  const me = currentRoom?.players?.find(p => p.id === mySocketId);
+  if (!me) return;
+  if (!confirm('确定退出座位？筹码将退回账户，座位会释放。')) return;
+  socket.emit('leave-seat');
 }
 
 // -------------------------
@@ -1968,8 +2387,95 @@ function startSessionClockUI(endsAt) {
 }
 
 // -------------------------
-// CHAT
+// CHAT + 表情（自研面板，非第三方版权素材）
 // -------------------------
+const EMOTE_CATALOG = [
+  { id: 'react', name: '反应', items: ['😂', '🤣', '😆', '😅', '😏', '😎', '🤩', '🥳', '😮', '🫡'] },
+  { id: 'feel', name: '情绪', items: ['😍', '🥰', '😘', '😭', '😢', '😤', '😠', '🤬', '😱', '🤯', '😳', '🥵'] },
+  { id: 'play', name: '牌桌', items: ['👍', '👎', '👏', '💪', '🙏', '🤝', '✌️', '🤞', '👀', '🤔', '😴', '🥱'] },
+  { id: 'fun', name: '趣味', items: ['🔥', '💀', '👻', '💩', '🤡', '😈', '🤖', '💯', '⭐', '✨', '🎉', '💔', '❤️', '💰', '🃏', '🎯', '🏆', '🍾', '🙈', '🎲'] }
+];
+
+let emojiPickerBuilt = false;
+
+function ensureEmojiPicker() {
+  const p = document.getElementById('emoji-picker');
+  if (!p || emojiPickerBuilt) return p;
+  p.innerHTML = '';
+  const tabs = document.createElement('div');
+  tabs.className = 'emoji-tabs';
+  const gridsWrap = document.createElement('div');
+  gridsWrap.className = 'emoji-grids';
+  EMOTE_CATALOG.forEach((cat, i) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'emoji-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = cat.name;
+    tab.dataset.cat = cat.id;
+    tabs.appendChild(tab);
+
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid' + (i === 0 ? ' active' : '');
+    grid.dataset.cat = cat.id;
+    cat.items.forEach((em) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'emoji-item';
+      btn.textContent = em;
+      btn.title = em;
+      btn.addEventListener('click', () => sendEmoji(em));
+      grid.appendChild(btn);
+    });
+    gridsWrap.appendChild(grid);
+  });
+  tabs.addEventListener('click', (e) => {
+    const tab = e.target.closest('.emoji-tab');
+    if (!tab) return;
+    const id = tab.dataset.cat;
+    tabs.querySelectorAll('.emoji-tab').forEach((t) => t.classList.toggle('active', t === tab));
+    gridsWrap.querySelectorAll('.emoji-grid').forEach((g) => g.classList.toggle('active', g.dataset.cat === id));
+  });
+  p.appendChild(tabs);
+  p.appendChild(gridsWrap);
+  emojiPickerBuilt = true;
+  return p;
+}
+
+function getBubbleAnchorEl(seatIndex) {
+  const me = currentRoom?.players?.find((p) => p.id === mySocketId);
+  if (me && Number(me.seatIndex) === Number(seatIndex)) {
+    return document.querySelector('#hero-zone .hero-board') || document.getElementById('hero-zone');
+  }
+  return document.querySelector(`#seats-container .seat[data-seat="${seatIndex}"]`);
+}
+
+function showSeatBubble(seatIndex, content, opts = {}) {
+  const layer = document.getElementById('seat-bubbles');
+  const anchor = getBubbleAnchorEl(seatIndex);
+  if (!layer || !anchor || content == null || content === '') return;
+
+  const layerRect = layer.getBoundingClientRect();
+  const aRect = anchor.getBoundingClientRect();
+  if (!aRect.width && !aRect.height && aRect.top === 0 && aRect.left === 0) return;
+
+  const kind = opts.kind === 'emoji' ? 'emoji' : 'text';
+  const el = document.createElement('div');
+  el.className = 'seat-bubble seat-bubble-' + kind;
+  el.style.left = (aRect.left + aRect.width / 2 - layerRect.left) + 'px';
+  el.style.top = (aRect.top - layerRect.top + (kind === 'emoji' ? aRect.height * 0.15 : -2)) + 'px';
+
+  if (kind === 'emoji') {
+    el.textContent = content;
+  } else {
+    const text = String(content).slice(0, 80);
+    el.innerHTML = `<span class="seat-bubble-tail"></span><span class="seat-bubble-body">${escapeHtml(text)}</span>`;
+  }
+
+  layer.appendChild(el);
+  const ttl = kind === 'emoji' ? 2800 : 3600;
+  setTimeout(() => el.remove(), ttl);
+}
+
 function sendChat() {
   const input = document.getElementById('chat-input');
   if (input.value.trim()) {
@@ -1979,13 +2485,26 @@ function sendChat() {
 }
 
 function toggleEmojiPicker() {
-  const p = document.getElementById('emoji-picker');
-  p.style.display = p.style.display === 'none' ? 'grid' : 'none';
+  const p = ensureEmojiPicker();
+  if (!p) return;
+  const open = p.hasAttribute('hidden') || p.style.display === 'none';
+  if (open) {
+    p.removeAttribute('hidden');
+    p.style.display = 'flex';
+  } else {
+    p.setAttribute('hidden', '');
+    p.style.display = 'none';
+  }
 }
 
 function sendEmoji(emoji) {
+  if (!emoji) return;
   socket.emit('emoji', emoji);
-  document.getElementById('emoji-picker').style.display = 'none';
+  const p = document.getElementById('emoji-picker');
+  if (p) {
+    p.setAttribute('hidden', '');
+    p.style.display = 'none';
+  }
 }
 
 // -------------------------
@@ -2162,7 +2681,10 @@ function toggleSound() {
 }
 
 function toggleChat() {
-  document.getElementById('chat-container').classList.toggle('active');
+  const el = document.getElementById('chat-container');
+  if (!el) return;
+  el.classList.toggle('active');
+  if (el.classList.contains('active')) clearChatBadge();
 }
 
 function toggleTopMenu(event) {
