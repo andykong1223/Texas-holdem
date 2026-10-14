@@ -421,10 +421,7 @@ input[type="checkbox"] { width: auto; }
 }
 .btn-chip:hover { filter: brightness(1.15); }
 .btn-leave { border-color: rgba(231, 76, 60, 0.45); color: #ffb4ab; }
-#btn-sit-out.btn-sit-in {
-  border-color: rgba(46, 204, 113, 0.45);
-  color: #a8f0c0;
-}
+.top-menu-item.menu-sit-in { color: #a8f0c0; }
 
 .top-menu { position: relative; z-index: 40; }
 .top-menu-trigger {

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>德州大厅</title>
-  <link rel="stylesheet" href="style.css?v=20261015b">
-  <link rel="stylesheet" href="lobby.css?v=20261015b">
-  <link rel="stylesheet" href="game-table.css?v=20261015b">
+  <link rel="stylesheet" href="style.css?v=20261015c">
+  <link rel="stylesheet" href="lobby.css?v=20261015c">
+  <link rel="stylesheet" href="game-table.css?v=20261015c">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -272,8 +272,6 @@
             <span id="host-display"></span>
           </div>
           <div class="top-actions">
-            <button type="button" class="btn btn-chip" id="btn-sit-out" onclick="toggleSitOut()" title="暂离留位；连续2手未操作也会自动暂离">暂离</button>
-            <button type="button" class="btn btn-chip btn-leave" id="btn-leave-seat" onclick="leaveSeat()" title="退出座位；连续5手未操作也会自动离座">退出</button>
             <div class="top-menu" id="top-menu">
               <button type="button" class="btn btn-chip top-menu-trigger" id="top-menu-btn" onclick="toggleTopMenu(event)" title="菜单" aria-haspopup="true" aria-expanded="false">
                 OPTIONS
@@ -295,6 +293,12 @@
                 </button>
                 <button type="button" class="top-menu-item" role="menuitem" id="history-btn" onclick="menuAction(openHandHistory)">
                   📋 手牌记录
+                </button>
+                <button type="button" class="top-menu-item" role="menuitem" id="menu-sit-out-btn" onclick="menuAction(toggleSitOut)">
+                  ⏸ 暂离
+                </button>
+                <button type="button" class="top-menu-item top-menu-item-danger" role="menuitem" id="menu-leave-seat-btn" onclick="menuAction(leaveSeat)">
+                  退出座位
                 </button>
                 <button type="button" class="top-menu-item top-menu-item-danger" role="menuitem" onclick="menuAction(leaveRoom)">
                   离开牌桌（留位）
@@ -589,8 +593,8 @@
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/api-client.js?v=20261015b"></script>
-  <script src="client.js?v=20261015b"></script>
-  <script src="js/lobby-app.js?v=20261015b"></script>
+  <script src="js/api-client.js?v=20261015c"></script>
+  <script src="client.js?v=20261015c"></script>
+  <script src="js/lobby-app.js?v=20261015c"></script>
 </body>
 </html>

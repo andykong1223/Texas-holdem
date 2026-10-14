@@ -2073,31 +2073,32 @@ function leaveRoom() {
 }
 
 function updateSitOutButton() {
-  const btn = document.getElementById('btn-sit-out');
-  const leaveBtn = document.getElementById('btn-leave-seat');
-  if (!btn) return;
+  const menuSit = document.getElementById('menu-sit-out-btn');
+  const menuLeave = document.getElementById('menu-leave-seat-btn');
+  if (!menuSit && !menuLeave) return;
   if (isSpectator) {
-    btn.style.display = 'none';
-    if (leaveBtn) leaveBtn.style.display = 'none';
+    if (menuSit) menuSit.style.display = 'none';
+    if (menuLeave) menuLeave.style.display = 'none';
     return;
   }
-  btn.style.display = '';
-  if (leaveBtn) leaveBtn.style.display = '';
+  if (menuSit) menuSit.style.display = '';
+  if (menuLeave) menuLeave.style.display = '';
   const me = currentRoom?.players?.find(p => p.id === mySocketId);
   const pending = !!me?.wantSitOut;
   const sitting = !!me?.isSittingOut;
+  if (!menuSit) return;
   if (sitting) {
-    btn.textContent = '回桌';
-    btn.title = '取消暂离，下下手继续打牌';
-    btn.classList.add('btn-sit-in');
+    menuSit.textContent = '▶ 回桌';
+    menuSit.title = '取消暂离，下下手继续打牌';
+    menuSit.classList.add('menu-sit-in');
   } else if (pending) {
-    btn.textContent = '取消暂离';
-    btn.title = '取消本手结束后的暂离';
-    btn.classList.add('btn-sit-in');
+    menuSit.textContent = '▶ 取消暂离';
+    menuSit.title = '取消本手结束后的暂离';
+    menuSit.classList.add('menu-sit-in');
   } else {
-    btn.textContent = '暂离';
-    btn.title = '暂离留位；连续2手未操作也会自动暂离';
-    btn.classList.remove('btn-sit-in');
+    menuSit.textContent = '⏸ 暂离';
+    menuSit.title = '暂离留位；连续2手未操作也会自动暂离';
+    menuSit.classList.remove('menu-sit-in');
   }
 }
 
