@@ -82,16 +82,69 @@ function fillNicknameInputs() {
   });
 }
 
-function showToast(msg, ms = 2200) {
-  const toast = document.getElementById('toast');
+function ensureToastEl() {
+  let toast = document.getElementById('toast');
   if (!toast) {
-    alert(msg);
-    return;
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.className = 'toast';
+    toast.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toast);
   }
-  toast.textContent = msg;
+  return toast;
+}
+
+/** 自定义顶部提示（替代 alert） */
+function showToast(msg, ms = 2600, type = '') {
+  const toast = ensureToastEl();
+  toast.textContent = String(msg || '');
+  toast.classList.remove('toast-error', 'toast-ok');
+  if (type === 'error') toast.classList.add('toast-error');
+  if (type === 'ok') toast.classList.add('toast-ok');
   toast.classList.add('show');
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => toast.classList.remove('show'), ms);
+  showToast._timer = setTimeout(() => {
+    toast.classList.remove('show', 'toast-error', 'toast-ok');
+  }, ms);
+}
+
+/** 自定义确认框（替代 confirm），返回 Promise<boolean> */
+function showConfirm(message, { confirmText = '确定', cancelText = '取消', danger = false } = {}) {
+  return new Promise((resolve) => {
+    let overlay = document.getElementById('app-confirm');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'app-confirm';
+      overlay.className = 'app-confirm';
+      overlay.innerHTML = `
+        <div class="app-confirm-card" role="dialog" aria-modal="true">
+          <p class="app-confirm-msg"></p>
+          <div class="app-confirm-actions">
+            <button type="button" class="btn btn-tiny app-confirm-cancel"></button>
+            <button type="button" class="btn btn-primary app-confirm-ok"></button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+    }
+    const msgEl = overlay.querySelector('.app-confirm-msg');
+    const okBtn = overlay.querySelector('.app-confirm-ok');
+    const cancelBtn = overlay.querySelector('.app-confirm-cancel');
+    msgEl.textContent = String(message || '');
+    okBtn.textContent = confirmText;
+    cancelBtn.textContent = cancelText;
+    okBtn.className = 'btn app-confirm-ok ' + (danger ? 'btn-danger' : 'btn-primary');
+    const finish = (val) => {
+      overlay.classList.remove('show');
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      overlay.onclick = null;
+      resolve(val);
+    };
+    okBtn.onclick = () => finish(true);
+    cancelBtn.onclick = () => finish(false);
+    overlay.onclick = (e) => { if (e.target === overlay) finish(false); };
+    overlay.classList.add('show');
+  });
 }
 
 function getInviteUrl(roomId) {
@@ -211,9 +264,9 @@ function showScreen(id) {
 // -------------------------
 function createRoom() {
   const maxPlayersRaw = parseInt(document.getElementById('host-max').value);
-  if (!maxPlayersRaw || maxPlayersRaw < 2) return alert('人数至少 2 人');
-  if (maxPlayersRaw > 12) return alert('最多 12 人');
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!maxPlayersRaw || maxPlayersRaw < 2) return showToast('人数至少 2 人', 2800, 'error');
+  if (maxPlayersRaw > 12) return showToast('最多 12 人', 2800, 'error');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
 
   const bigBlind = Math.max(1, parseInt(document.getElementById('host-bb').value) || 2);
   const startingChips = parseInt(document.getElementById('host-chips').value) || bigBlind * 100;
@@ -267,8 +320,8 @@ function closeJoinModal() {
 function joinRoomFromModal() {
   const code = document.getElementById('join-modal-code').value.trim().toUpperCase();
   const password = document.getElementById('join-modal-password').value;
-  if (!code) return alert('请输入房间号');
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!code) return showToast('请输入房间号', 2800, 'error');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('join-room', { roomCode: code, password });
   closeJoinModal();
 }
@@ -276,8 +329,8 @@ function joinRoomFromModal() {
 function spectateFromModal() {
   const code = document.getElementById('join-modal-code').value.trim().toUpperCase();
   const password = document.getElementById('join-modal-password').value;
-  if (!code) return alert('请输入房间号');
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!code) return showToast('请输入房间号', 2800, 'error');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('spectate-room', { roomCode: code, password });
   closeJoinModal();
 }
@@ -285,26 +338,26 @@ function spectateFromModal() {
 function joinRoomDirect() {
   const code = (document.getElementById('join-code')?.value || '').trim().toUpperCase();
   const password = document.getElementById('join-password')?.value || '';
-  if (!code) return alert('请输入房间号');
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!code) return showToast('请输入房间号', 2800, 'error');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('join-room', { roomCode: code, password });
 }
 
 function spectateDirect() {
   const code = (document.getElementById('join-code')?.value || '').trim().toUpperCase();
   const password = document.getElementById('join-password')?.value || '';
-  if (!code) return alert('请输入房间号');
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!code) return showToast('请输入房间号', 2800, 'error');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('spectate-room', { roomCode: code, password });
 }
 
 function joinRoomByCode(code, password = '') {
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('join-room', { roomCode: String(code || '').toUpperCase(), password });
 }
 
 function spectateRoomByCode(code, password = '') {
-  if (!socket.connected) return alert('未连接，请先登录');
+  if (!socket.connected) return showToast('未连接，请先登录', 2800, 'error');
   socket.emit('spectate-room', { roomCode: String(code || '').toUpperCase(), password });
 }
 
@@ -396,6 +449,10 @@ socket.on('joined-as-player', () => {
   updateSpectatorUI();
 });
 
+socket.on('join-pending-next-hand', (data) => {
+  showToast(data?.message || '已入座，下一手自动入局', 3600);
+});
+
 socket.on('join-requested', (val) => {
   hasRequestedJoin = val;
   updateSpectatorUI();
@@ -403,9 +460,9 @@ socket.on('join-requested', (val) => {
 
 socket.on('join-status', (data) => {
   if (data.status === 'approved') {
-    alert('入座申请已通过，下一手开始时入座。');
+    showToast('入座申请已通过，下一手开始时入座。', 3200);
   } else if (data.status === 'declined') {
-    alert('入座申请被拒绝。');
+    showToast('入座申请被拒绝。', 3200);
     hasRequestedJoin = false;
     updateSpectatorUI();
   }
@@ -419,9 +476,9 @@ socket.on('rebuy-pending', (val) => {
 socket.on('rebuy-result', (data) => {
   rebuyPending = false;
   if (data.approved) {
-    alert(`买入已批准 $${data.amount}，下一手入局。`);
+    showToast(`买入已批准 $${data.amount}，下一手入局。`, 3200);
   } else {
-    alert('买入申请被拒绝。');
+    showToast('买入申请被拒绝。', 3200);
   }
   updateSpectatorUI();
 });
@@ -446,12 +503,12 @@ socket.on('session-settled', (payload) => {
   if (sessionClockTimer) { clearInterval(sessionClockTimer); sessionClockTimer = null; }
   if (window.App) window.App.showSettlement(payload);
   else {
-    alert('牌局已结算');
+    showToast('牌局已结算', 3200);
     if (window.App) window.App.showLobby();
   }
 });
 
-socket.on('error-msg', (msg) => alert(msg));
+socket.on('error-msg', (msg) => showToast(msg, 3200, 'error'));
 
 socket.on('state-update', (state) => {
   currentRoom = state;
@@ -511,12 +568,15 @@ function showHandWinBanner(results) {
   }
 
   // 同一玩家可能拿主池+边池，合并金额
+  const skipHandLabel = (h) => !h || h === 'Win by Fold' || h === 'Uncontested Side Pot';
   const totals = new Map();
   for (const r of results) {
     const prev = totals.get(r.playerId) || { amount: 0, name: r.playerName || '', hand: r.hand };
     prev.amount += r.amount || 0;
     if (r.playerName) prev.name = r.playerName;
-    if (r.hand) prev.hand = r.hand;
+    // 有真实牌型时覆盖「无人跟注」这类占位文案
+    if (r.hand && !skipHandLabel(r.hand)) prev.hand = r.hand;
+    else if (!prev.hand) prev.hand = r.hand;
     totals.set(r.playerId, prev);
   }
 
@@ -525,8 +585,9 @@ function showHandWinBanner(results) {
     const p = currentRoom?.players?.find(pl => pl.id === pid);
     const isMe = pid === mySocketId;
     const who = isMe ? '你' : (info.name || p?.name || '玩家');
-    const handZh = HAND_NAME_ZH[info.hand] || info.hand || '';
-    const handPart = handZh && handZh !== 'Win by Fold' && handZh !== 'Uncontested Side Pot'
+    // 弃牌收池不展示牌型；摊牌才显示成牌名
+    const handZh = skipHandLabel(info.hand) ? '' : (HAND_NAME_ZH[info.hand] || info.hand || '');
+    const handPart = handZh
       ? `<span class="win-banner-hand">（${escapeHtml(handZh)}）</span>`
       : '';
     parts.push(
@@ -604,13 +665,13 @@ socket.on('emoji-received', (data) => {
 
 socket.on('kicked', (data) => {
   if (data && data.toSpectator) {
-    alert('房主已将你移至观战。');
+    showToast(data?.afterHand ? '本手结束后你将移至观战' : '房主已将你移至观战。', 3200);
     isSpectator = true;
     hasRequestedJoin = false;
     rebuyPending = false;
     updateSpectatorUI();
   } else {
-    alert('你已被房主移出房间。');
+    showToast('你已被房主移出房间。', 3200);
     leaveRoom();
   }
 });
@@ -819,7 +880,7 @@ function closeRebuyModal() {
 
 function sendRebuyRequest() {
   const amount = parseInt(document.getElementById('rebuy-modal-amount').value);
-  if (!amount || amount < 1) return alert('请输入有效金额');
+  if (!amount || amount < 1) return showToast('请输入有效金额', 2800, 'error');
   // host-rebuy 与 rebuy-request（含免审）服务端均支持立即到账
   if (amIHost()) socket.emit('host-rebuy', { amount });
   else socket.emit('rebuy-request', { amount });
@@ -837,7 +898,7 @@ function cancelRebuyRequest() {
 // HOST actions for rebuy/join requests
 function approveRebuy(playerId, amount) {
   const numAmount = parseInt(amount);
-  if (!numAmount || numAmount < 1) return alert('Invalid amount');
+  if (!numAmount || numAmount < 1) return showToast('请输入有效金额', 2800, 'error');
   socket.emit('approve-rebuy', { playerId, amount: numAmount });
 }
 
@@ -853,8 +914,9 @@ function declineJoin(spectatorId) {
   socket.emit('decline-join', { spectatorId });
 }
 
-function endGame() {
-  if (!confirm('确定解散房间？所有人将返回大厅。')) return;
+async function endGame() {
+  const ok = await showConfirm('确定解散房间？所有人将返回大厅。', { danger: true, confirmText: '解散' });
+  if (!ok) return;
   socket.emit('end-game');
   setTimeout(() => leaveRoom(), 200);
 }
@@ -870,15 +932,15 @@ function closeSidebar() {
 function openRebuyFromMenu() {
   if (!currentRoom) return;
   if (isSpectator) {
-    alert('观战中无法买入，请先入座');
+    showToast('观战中无法买入，请先入座', 3200);
     return;
   }
   if (!currentRoom.settings?.rebuysAllowed) {
-    alert('本桌已关闭买入');
+    showToast('本桌已关闭买入', 3200);
     return;
   }
   if (rebuyPending) {
-    alert('已有买入申请等待确认');
+    showToast('已有买入申请等待确认', 3200);
     return;
   }
   openRebuyModal();
@@ -899,7 +961,8 @@ function renderSidebar() {
     if (p.hasRebought) status = '(下局买入)';
     else if (p.folded) status = '(弃牌)';
     else if (p.allIn) status = '(全下)';
-    else if (p.isSittingOut) status = '(旁观)';
+    else if (p.pendingJoin) status = '(下下手入局)';
+    else if (p.isSittingOut) status = '(暂离)';
     const pos = positionMap[p.seatIndex];
     const posTag = pos ? `<span class="sp-pos">${escapeHtml(pos.name)}</span>` : '';
     return `<div class="sidebar-player ${isMe ? 'me' : ''} ${p.folded ? 'folded' : ''}">
@@ -1002,9 +1065,7 @@ const HAND_NAME_ZH = {
   'Three of a Kind': '三条',
   'Two Pair': '两对',
   'One Pair': '一对',
-  'High Card': '高牌',
-  'Win by Fold': '无人跟注获胜',
-  'Uncontested Side Pot': '边池'
+  'High Card': '高牌'
 };
 
 const STREET_ZH = { preflop: '翻前', flop: '翻牌', turn: '转牌', river: '河牌' };
@@ -1270,7 +1331,7 @@ function closeRaisePanel() {
 
 function confirmRaise() {
   const amount = parseInt(document.getElementById('raise-amount')?.value, 10);
-  if (!amount) return alert('请选择加注金额');
+  if (!amount) return showToast('请选择加注金额', 2800, 'error');
   closeRaisePanel();
   socket.emit('action', { action: 'raise', amount });
   playSound('click');
@@ -1700,7 +1761,7 @@ function renderTable() {
       && currentRoom.gameState.bettingRound !== 'showdown';
     const pos = positionMap[p.seatIndex];
     const renderKey = [
-      p.id, p.chips, p.currentBet, p.folded, p.allIn, p.disconnected, p.isSittingOut,
+      p.id, p.chips, p.currentBet, p.folded, p.allIn, p.disconnected, p.isSittingOut, p.pendingJoin,
       isActive, cardsRevealed, cardsSignature(p.holeCards), (mask[0] ? 1 : 0) + (mask[1] ? 2 : 0),
       pos?.code || '',
       currentRoom.gameState.dealerIndex === p.seatIndex ? 'D' : '',
@@ -1742,6 +1803,7 @@ function renderTable() {
 
     let statusTag = '';
     if (p.disconnected) statusTag = '<div class="seat-status-tag">断线</div>';
+    else if (p.pendingJoin) statusTag = '<div class="seat-status-tag">下下手</div>';
     else if (p.isSittingOut) statusTag = '<div class="seat-status-tag">暂离</div>';
     else if (p.allIn) statusTag = '<div class="seat-status-tag">全下</div>';
     else if (p.folded) statusTag = '<div class="seat-status-tag">弃牌</div>';
@@ -2031,11 +2093,15 @@ function toggleSitOut() {
   socket.emit('sit-out');
 }
 
-function leaveSeat() {
+async function leaveSeat() {
   if (isSpectator || !socket?.connected) return;
   const me = currentRoom?.players?.find(p => p.id === mySocketId);
   if (!me) return;
-  if (!confirm('确定退出座位？筹码将退回账户，座位会释放。')) return;
+  const ok = await showConfirm('确定退出座位？筹码将退回账户，座位会释放。', {
+    danger: true,
+    confirmText: '退出座位'
+  });
+  if (!ok) return;
   socket.emit('leave-seat');
 }
 
@@ -2512,7 +2578,7 @@ function sendEmoji(emoji) {
 // -------------------------
 function openSettings() {
   if (!currentRoom || !amIHost()) {
-    alert('只有房主可以打开设置。');
+    showToast('只有房主可以打开设置。', 3200);
     return;
   }
   document.getElementById('settings-modal').classList.add('show');
@@ -2611,18 +2677,22 @@ function changeTimerDuration() {
   socket.emit('host-action', { type: 'change-timer-duration', amount: dur });
 }
 
-function kickPlayer() {
+async function kickPlayer() {
   const playerId = document.getElementById('kick-select').value;
   if (!playerId) return;
-  if (!confirm('确定踢出？玩家会变观战，观战者会离开房间。')) return;
+  const ok = await showConfirm('确定踢出？玩家会变观战，观战者会离开房间。', {
+    danger: true,
+    confirmText: '踢出'
+  });
+  if (!ok) return;
   socket.emit('host-action', { type: 'kick', playerId });
 }
 
 function editChips() {
   const playerId = document.getElementById('editchips-select').value;
   const amount = parseInt(document.getElementById('editchips-amount').value);
-  if (!playerId) return alert('请选择玩家');
-  if (isNaN(amount) || amount < 0) return alert('请输入有效筹码');
+  if (!playerId) return showToast('请选择玩家', 2800, 'error');
+  if (isNaN(amount) || amount < 0) return showToast('请输入有效筹码', 2800, 'error');
   socket.emit('host-action', { type: 'edit-chips', playerId, amount });
   document.getElementById('editchips-amount').value = '';
 }
@@ -2641,8 +2711,8 @@ function toggleRebuys() {
 function changeMaxPlayers() {
   const amount = parseInt(document.getElementById('settings-max-players').value);
   if (!amount) return;
-  if (amount < 2) return alert('人数至少 2 人');
-  if (amount > 12) return alert('最多 12 人');
+  if (amount < 2) return showToast('人数至少 2 人', 2800, 'error');
+  if (amount > 12) return showToast('最多 12 人', 2800, 'error');
   socket.emit('host-action', { type: 'change-max-players', amount });
 }
 

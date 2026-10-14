@@ -581,13 +581,24 @@ const App = {
     }
   },
 
-  toast(msg) {
-    const t = document.getElementById('toast');
-    if (!t) return alert(msg);
+  toast(msg, type = '') {
+    if (typeof showToast === 'function') {
+      showToast(msg, 2800, type || 'error');
+      return;
+    }
+    let t = document.getElementById('toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'toast';
+      t.className = 'toast';
+      t.setAttribute('aria-live', 'polite');
+      document.body.appendChild(t);
+    }
     t.textContent = msg;
     t.classList.add('show');
+    if (type === 'error') t.classList.add('toast-error');
     clearTimeout(this._toastTimer);
-    this._toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+    this._toastTimer = setTimeout(() => t.classList.remove('show', 'toast-error'), 2800);
   }
 };
 

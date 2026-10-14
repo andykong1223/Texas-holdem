@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>德州大厅</title>
-  <link rel="stylesheet" href="style.css?v=20261014t">
-  <link rel="stylesheet" href="lobby.css?v=20261014t">
-  <link rel="stylesheet" href="game-table.css?v=20261014t">
+  <link rel="stylesheet" href="style.css?v=20261014w">
+  <link rel="stylesheet" href="lobby.css?v=20261014w">
+  <link rel="stylesheet" href="game-table.css?v=20261014w">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -229,7 +229,9 @@
         </div>
         <!-- legacy ids for client.js nickname helpers -->
         <input type="hidden" id="host-nickname" value="">
-        <button class="btn btn-primary btn-full" onclick="createRoom()">创建并进入</button>
+        <div class="form-sticky-actions">
+          <button type="button" class="btn btn-primary btn-full" onclick="createRoom()">创建并进入</button>
+        </div>
       </div>
     </div>
 
@@ -587,8 +589,8 @@
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/api-client.js?v=20261014t"></script>
-  <script src="client.js?v=20261014t"></script>
-  <script src="js/lobby-app.js?v=20261014t"></script>
+  <script src="js/api-client.js?v=20261014x"></script>
+  <script src="client.js?v=20261014x"></script>
+  <script src="js/lobby-app.js?v=20261014x"></script>
 </body>
 </html>

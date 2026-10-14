@@ -185,6 +185,8 @@ function serializePlayer(p) {
     idleHands: p.idleHands || 0,
     wantSitOut: !!p.wantSitOut,
     wantLeaveSeat: !!p.wantLeaveSeat,
+    pendingJoin: !!p.pendingJoin,
+    pendingRebuy: p.pendingRebuy || 0,
     disconnected: true,
     expectReconnect: true
   };
@@ -258,6 +260,8 @@ function hydratePlayer(data) {
   p.idleHands = data.idleHands || 0;
   p.wantSitOut = !!data.wantSitOut;
   p.wantLeaveSeat = !!data.wantLeaveSeat;
+  p.pendingJoin = !!data.pendingJoin;
+  p.pendingRebuy = data.pendingRebuy || 0;
   p.disconnected = true;
   p.expectReconnect = true;
   return p;
@@ -379,7 +383,8 @@ function parkPlayer(room, socketId, { expectReconnect = true } = {}) {
     && room.gameState.bettingRound !== 'showdown';
 
   if (inBetting) {
-    const wasCurrent = room.gameState.currentPlayerIndex === player.seatIndex;
+    const wasCurrent = room.gameState.currentPlayerIndex === player.seatIndex
+      && !player.folded && !player.allIn;
     player.disconnected = true;
     player.expectReconnect = !!expectReconnect;
     if (!expectReconnect) player.sitOutAfterHand = true;
@@ -387,6 +392,15 @@ function parkPlayer(room, socketId, { expectReconnect = true } = {}) {
     // 倒计时不中断；若正在走表，给在线玩家同步一下剩余时间
     if (wasCurrent && room.turnTimer && room.gameState.timerEnd) {
       emitTurnTimer(room, player);
+    } else if (wasCurrent && !room.settings.timerEnabled) {
+      // 关闭行动计时时断线：立即代打，避免永久卡死
+      setTimeout(() => {
+        if (!rooms.has(room.id) || room._settling) return;
+        const cur = getCurrentPlayer(room);
+        if (cur && cur.userId === player.userId && cur.disconnected) {
+          autoActOnTimeout(room);
+        }
+      }, 0);
     }
     return player;
   }
@@ -415,7 +429,7 @@ function parkPlayer(room, socketId, { expectReconnect = true } = {}) {
 function tryResumeHandIfNeeded(room) {
   if (!room || room._settling || room.pendingSettle) return;
   const eligible = Array.from(room.players.values()).filter(
-    p => p.chips > 0 && !p.isSittingOut && !p.disconnected
+    p => p.chips > 0 && !p.isSittingOut
   );
   if (eligible.length < 2) return;
   if (room.gameState.status === 'waiting') {
@@ -446,7 +460,7 @@ function reclaimPlayer(room, socket, user) {
   player.disconnected = false;
   player.expectReconnect = false;
   player.sitOutAfterHand = false;
-  player.isSittingOut = false;
+  // 保留主动暂离状态，断线重连不应强制拉回入局
   room.players.set(socket.id, player);
   if (room.hostUserId === user.id) room.hostId = socket.id;
   socket.join(room.id);
@@ -546,6 +560,8 @@ class Player {
     this.hadDecisionThisHand = false;
     this.wantSitOut = false; // 本手结束后暂离
     this.wantLeaveSeat = false; // 本手结束后离座
+    this.pendingJoin = false; // 中途入座：等下一手再发牌
+    this.pendingRebuy = 0; // 局中补码，下一手入账
   }
   
   resetForHand() {
@@ -630,6 +646,7 @@ class Room {
         seatIndex: p.seatIndex,
         isSittingOut: p.isSittingOut,
         wantSitOut: !!p.wantSitOut,
+        pendingJoin: !!p.pendingJoin,
         hasRebought: p.hasRebought,
         folded: p.folded,
         allIn: p.allIn,
@@ -768,8 +785,8 @@ function applyIdleAndSitOutRules(room) {
       p.idleHands = 0;
     } else if (p.hadDecisionThisHand) {
       p.idleHands = (p.idleHands || 0) + 1;
-    } else if (p.isSittingOut && p.chips > 0) {
-      // 已暂离且仍占座：每过一手继续累计，满 5 手离座
+    } else if (p.isSittingOut && p.chips > 0 && !p.pendingJoin) {
+      // 已暂离且仍占座：每过一手继续累计，满 5 手离座（中途待入局不算）
       p.idleHands = (p.idleHands || 0) + 1;
     }
 
@@ -856,18 +873,26 @@ function evaluate5(cards) {
   for (let i=0; i<4; i++) {
     if (ranks[i] - 1 !== ranks[i+1]) { isStraight = false; break; }
   }
+  // A-5 轮子顺按 5-high 比较（避免 Ace 被当成最大踢脚）
+  let straightValues = ranks;
   if (ranks[0] === 14 && ranks[1] === 5 && ranks[2] === 4 && ranks[3] === 3 && ranks[4] === 2) {
     isStraight = true;
-    ranks.push(ranks.shift());
+    straightValues = [5, 4, 3, 2, 1];
   }
   const counts = {};
   ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
   const groups = Object.entries(counts).map(([r,c]) => [parseInt(r), c]).sort((a,b) => b[1] - a[1] || b[0] - a[0]);
-  if (isFlush && isStraight) return { rank: 8, values: ranks, name: ranks[0] === 14 ? 'Royal Flush' : 'Straight Flush' };
+  if (isFlush && isStraight) {
+    return {
+      rank: 8,
+      values: straightValues,
+      name: straightValues[0] === 14 ? 'Royal Flush' : 'Straight Flush'
+    };
+  }
   if (groups[0][1] === 4) return { rank: 7, values: [groups[0][0], groups[1][0]], name: 'Four of a Kind' };
   if (groups[0][1] === 3 && groups[1][1] === 2) return { rank: 6, values: [groups[0][0], groups[1][0]], name: 'Full House' };
   if (isFlush) return { rank: 5, values: ranks, name: 'Flush' };
-  if (isStraight) return { rank: 4, values: ranks, name: 'Straight' };
+  if (isStraight) return { rank: 4, values: straightValues, name: 'Straight' };
   if (groups[0][1] === 3) return { rank: 3, values: [groups[0][0], groups[1][0], groups[2][0]], name: 'Three of a Kind' };
   if (groups[0][1] === 2 && groups[1][1] === 2) return { rank: 2, values: [groups[0][0], groups[1][0], groups[2][0]], name: 'Two Pair' };
   if (groups[0][1] === 2) return { rank: 1, values: [groups[0][0], groups[1][0], groups[2][0], groups[3][0]], name: 'One Pair' };
@@ -900,8 +925,14 @@ function calculatePots(players) {
   let pots = [];
   let active = players.filter(p => !p.folded && p.totalBet > 0);
   let allContributors = players.filter(p => p.totalBet > 0);
+  if (allContributors.length === 0) return [];
+  // 无人未弃牌但仍有注码：按投入退回（避免底池蒸发）
   if (active.length === 0) {
-    return [{ amount: allContributors.reduce((s,p)=>s+p.totalBet, 0), eligible: [] }];
+    return [{
+      amount: allContributors.reduce((s, p) => s + p.totalBet, 0),
+      eligible: [],
+      refundIds: allContributors.map(p => p.id)
+    }];
   }
 
   let levels = [...new Set(allContributors.map(p => p.totalBet))].sort((a,b) => a-b);
@@ -923,7 +954,8 @@ function processJoinQueue(room) {
     room.destructionTimeout = null;
   }
   if (room.joinQueue.length === 0) return;
-  const usedSeats = new Set(Array.from(room.players.values()).map(p => p.seatIndex));
+  // 含 awayPlayers，避免与断线占座冲突
+  const usedSeats = new Set(seatedPlayers(room).map(p => p.seatIndex));
   const availableSeats = [];
   for (let i = 0; i < room.settings.maxPlayers; i++) {
     if (!usedSeats.has(i)) availableSeats.push(i);
@@ -957,20 +989,51 @@ function processJoinQueue(room) {
 
 function startGame(room) {
   if (room.players.size < 2) return;
+  // 仅允许从等待开局；禁止下注中重入导致吞池
+  if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
+    return;
+  }
   room.gameState.status = 'playing';
+  // 首手由 startHand 选最小座位为庄，此处不预置再 +1
   if (room.gameState.dealerIndex === -1 ||
       !Array.from(room.players.values()).some(p => p.seatIndex === room.gameState.dealerIndex && p.chips > 0 && !p.isSittingOut)) {
-    const candidates = Array.from(room.players.values())
-      .filter(p => p.chips > 0 && !p.isSittingOut)
-      .map(p => p.seatIndex)
-      .sort((a,b) => a-b);
-    room.gameState.dealerIndex = candidates.length > 0 ? candidates[0] : -1;
+    room.gameState.dealerIndex = -1;
   }
   startHand(room);
 }
 
+function emitHandStarted(room) {
+  room.players.forEach((_, sid) => {
+    if (!isLiveSocketId(sid)) return;
+    io.to(sid).emit('hand-started', room.getPublicState(sid));
+  });
+  room.spectators.forEach(sid => io.to(sid).emit('hand-started', room.getPublicState(sid)));
+}
+
+/** 本街已无法继续下注（全下）时，收池进入下一街/摊牌 */
+function beginAllInRunoutFromStreet(room) {
+  room.gameState.pots = calculatePots(Array.from(room.players.values()));
+  Array.from(room.players.values()).forEach(p => { p.currentBet = 0; });
+  room.gameState.currentBet = 0;
+  room.gameState.minRaise = room.settings.bigBlind;
+  room.gameState.currentPlayerIndex = -1;
+  room.gameState.timerEnd = 0;
+  advanceRound(room);
+  broadcastState(room);
+}
+
 function startHand(room) {
-  room.gameState.handNumber++;
+  // 下注进行中禁止重开一手（否则 totalBet 被清零 → 池内筹码蒸发）
+  if (room.gameState.status === 'playing'
+    && ['preflop', 'flop', 'turn', 'river'].includes(room.gameState.bettingRound)
+    && !room._handSettled) {
+    console.warn(`[startHand] blocked mid-hand restart in room ${room.id} (${room.gameState.bettingRound})`);
+    return;
+  }
+
+  room._handSettled = false;
+  clearAllInRunout(room);
+  clearTurnTimer(room);
   room.gameState.deck = createDeck();
   shuffleDeck(room.gameState.deck);
   room.gameState.communityCards = [];
@@ -980,11 +1043,18 @@ function startHand(room) {
   room.gameState.minRaise = room.settings.bigBlind;
   room.gameState.bettingRound = 'preflop';
   
-  // Activate players who have rebought — they can now play again
+  // 买入回桌 / 中途入座 / 待入账补码：下一手正式入局
   Array.from(room.players.values()).forEach(p => {
-    if (p.hasRebought) {
+    if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0) {
+      if ((p.pendingRebuy || 0) > 0) {
+        p.chips = (p.chips || 0) + p.pendingRebuy;
+        p.pendingRebuy = 0;
+      }
       p.isSittingOut = false;
       p.hasRebought = false;
+      p.pendingJoin = false;
+      p.idleHands = 0;
+      p.wantSitOut = false;
     }
   });
   
@@ -994,10 +1064,11 @@ function startHand(room) {
     p.handStartChips = p.chips;
   });
   
+  // 断线但仍 expectReconnect 的玩家照常发牌，超时自动行动（避免二人桌一人断线就停局）
   const activePlayers = Array.from(room.players.values())
-    .filter(p => p.chips > 0 && !p.isSittingOut && !p.disconnected);
+    .filter(p => p.chips > 0 && !p.isSittingOut);
   
-  // Mark non-active players (bankrupt, sitting out, late joiners, disconnected) as folded
+  // Mark non-active players (bankrupt, sitting out) as folded
   Array.from(room.players.values()).forEach(p => {
     if (!activePlayers.includes(p)) {
       p.folded = true;
@@ -1012,12 +1083,18 @@ function startHand(room) {
     }
     return;
   }
+
+  room.gameState.handNumber++;
   
   const sortedSeats = activePlayers.map(p => p.seatIndex).sort((a,b) => a-b);
-  let dealerIdx = sortedSeats.indexOf(room.gameState.dealerIndex);
-  if (dealerIdx < 0) dealerIdx = 0;
-  dealerIdx = (dealerIdx + 1) % sortedSeats.length;
-  room.gameState.dealerIndex = sortedSeats[dealerIdx];
+  const oldDealer = room.gameState.dealerIndex;
+  const dealerIdx = sortedSeats.indexOf(oldDealer);
+  if (dealerIdx < 0) {
+    // 首手或旧庄已离桌：取顺时针第一位活跃座，不再错误地 0 再 +1
+    room.gameState.dealerIndex = sortedSeats.find(s => s > oldDealer) ?? sortedSeats[0];
+  } else {
+    room.gameState.dealerIndex = sortedSeats[(dealerIdx + 1) % sortedSeats.length];
+  }
   const dealer = activePlayers.find(p => p.seatIndex === room.gameState.dealerIndex);
   const headsUp = activePlayers.length === 2;
   // Heads-up：庄家兼小盲；多人：庄家左侧小盲、再左侧大盲
@@ -1032,7 +1109,8 @@ function startHand(room) {
   room.gameState.bbSeat = bbPlayer.seatIndex;
   postBlind(sbPlayer, room.settings.smallBlind);
   postBlind(bbPlayer, room.settings.bigBlind);
-  room.gameState.currentBet = room.settings.bigBlind;
+  // 面对短码盲注时，当前需跟注额取实际已出的最大盲
+  room.gameState.currentBet = Math.max(sbPlayer.currentBet, bbPlayer.currentBet);
   for(let i=0; i<2; i++) {
     for(let p of activePlayers) {
       p.holeCards.push(room.gameState.deck.pop());
@@ -1050,14 +1128,17 @@ function startHand(room) {
   } else {
     room.gameState.currentPlayerIndex = findNextSeatClockwise(room, bbPlayer.seatIndex, { canActOnly: true });
   }
-  if (room.gameState.currentPlayerIndex < 0) {
-    room.gameState.currentPlayerIndex = sbPlayer.seatIndex;
+
+  const canActNow = activePlayers.filter(p => !p.allIn);
+  if (canActNow.length === 0 || room.gameState.currentPlayerIndex < 0 || !getCurrentPlayer(room)) {
+    // 盲注后无人可行动（例如双方短码全下）→ 直接发公共牌，禁止卡死在计时器
+    emitHandStarted(room);
+    beginAllInRunoutFromStreet(room);
+    persistRoomNow(room);
+    return;
   }
-  room.players.forEach((_, sid) => {
-    if (!isLiveSocketId(sid)) return;
-    io.to(sid).emit('hand-started', room.getPublicState(sid));
-  });
-  room.spectators.forEach(sid => io.to(sid).emit('hand-started', room.getPublicState(sid)));
+
+  emitHandStarted(room);
   startTurnTimer(room);
   persistRoomNow(room);
 }
@@ -1278,8 +1359,16 @@ function applyPlayerRebuy(room, player, amount) {
     return { ok: false, error: `账户筹码不足，需要 ${amount}` };
   }
   db.adjustChips(fresh.id, -amount);
-  player.chips = (player.chips || 0) + amount;
   player.sessionBuyIn = (player.sessionBuyIn || 0) + amount;
+  const inBetting = room.gameState.status === 'playing'
+    && room.gameState.bettingRound !== 'showdown';
+  if (inBetting) {
+    // 下注中补码：先扣账户，下一手再入桌面筹码（避免当街直接使用）
+    player.pendingRebuy = (player.pendingRebuy || 0) + amount;
+    player.hasRebought = true;
+    return { ok: true, pending: true, wallet: db.getUserById(fresh.id).chips };
+  }
+  player.chips = (player.chips || 0) + amount;
   player.hasRebought = true;
   player.isSittingOut = false;
   return { ok: true, wallet: db.getUserById(fresh.id).chips };
@@ -1303,13 +1392,16 @@ function processAction(playerId, action, amount, opts = {}) {
     return;
   }
   clearTurnTimer(room);
-  if (!opts.auto) {
-    player.actedVoluntarilyThisHand = true;
-    player.idleHands = 0;
-  }
+  const markVoluntary = () => {
+    if (!opts.auto) {
+      player.actedVoluntarilyThisHand = true;
+      player.idleHands = 0;
+    }
+  };
   if (action === 'fold') {
     player.folded = true;
     player.hasActed = true;
+    markVoluntary();
     logHandAction(room, player, 'fold', { amount: 0 });
   } else if (action === 'check') {
     if (player.currentBet < room.gameState.currentBet) {
@@ -1318,6 +1410,7 @@ function processAction(playerId, action, amount, opts = {}) {
       return;
     }
     player.hasActed = true;
+    markVoluntary();
     logHandAction(room, player, 'check', { amount: 0 });
   } else if (action === 'call') {
     const callAmount = room.gameState.currentBet - player.currentBet;
@@ -1327,13 +1420,16 @@ function processAction(playerId, action, amount, opts = {}) {
     player.totalBet += actualCall;
     if (player.chips === 0) player.allIn = true;
     player.hasActed = true;
+    markVoluntary();
     logHandAction(room, player, player.allIn ? 'allin' : 'call', { amount: actualCall });
   } else if (action === 'raise' || action === 'allin') {
     let totalRequired;
+    const maxTotal = player.currentBet + player.chips;
     if (action === 'allin') {
-      totalRequired = player.currentBet + player.chips;
+      totalRequired = maxTotal;
     } else {
-      totalRequired = parseInt(amount) || 0;
+      totalRequired = parseInt(amount, 10) || 0;
+      if (totalRequired > maxTotal) totalRequired = maxTotal;
     }
     if (totalRequired <= player.currentBet) {
       io.to(playerId).emit('error-msg', 'Invalid raise amount.');
@@ -1347,6 +1443,7 @@ function processAction(playerId, action, amount, opts = {}) {
       player.totalBet += callPortion;
       if (player.chips === 0) player.allIn = true;
       player.hasActed = true;
+      markVoluntary();
       logHandAction(room, player, player.allIn ? 'allin' : 'call', { amount: callPortion });
       checkRoundComplete(room);
       return;
@@ -1358,22 +1455,31 @@ function processAction(playerId, action, amount, opts = {}) {
       startTurnTimer(room);
       return;
     }
+    const raiseAmount = totalRequired - prevBet;
+    const isShove = totalRequired >= maxTotal;
+    // 非全下加注必须达到最小加注额
+    if (!isShove && raiseAmount < (room.gameState.minRaise || room.settings.bigBlind)) {
+      io.to(playerId).emit('error-msg', `加注至少 ${room.gameState.minRaise || room.settings.bigBlind}`);
+      startTurnTimer(room);
+      return;
+    }
     player.chips -= raiseDiff;
     player.currentBet = totalRequired;
     player.totalBet += raiseDiff;
-    const raiseAmount = totalRequired - prevBet;
     if (raiseAmount >= room.gameState.minRaise) {
       room.gameState.minRaise = raiseAmount;
-      room.gameState.lastRaise = raiseAmount; // FIX Bug 9: store the raise DIFF, not totalRequired
+      room.gameState.lastRaise = raiseAmount;
       room.gameState.currentBet = totalRequired;
       Array.from(room.players.values()).forEach(p => {
         if (p.id !== player.id && !p.folded && !p.allIn) p.hasActed = false;
       });
     } else {
+      // 不足以再开一轮的全下加注：仍抬高需跟注额，但不重置他人 hasActed 以外的逻辑——未跟平者仍需行动
       room.gameState.currentBet = totalRequired;
     }
     if (player.chips === 0) player.allIn = true;
     player.hasActed = true;
+    markVoluntary();
     const actName = player.allIn ? 'allin' : 'raise';
     logHandAction(room, player, actName, { amount: raiseDiff, raiseBy: Math.max(0, raiseAmount) });
   }
@@ -1383,8 +1489,9 @@ function processAction(playerId, action, amount, opts = {}) {
 function checkRoundComplete(room) {
   const activePlayers = Array.from(room.players.values()).filter(p => !p.folded && !p.isSittingOut);
   const playersWhoCanAct = activePlayers.filter(p => !p.allIn);
-  const roundOver = playersWhoCanAct.every(p => p.hasActed && p.currentBet === room.gameState.currentBet);
-  const onlyOneLeft = activePlayers.filter(p => !p.folded).length === 1;
+  const roundOver = playersWhoCanAct.length === 0
+    || playersWhoCanAct.every(p => p.hasActed && p.currentBet === room.gameState.currentBet);
+  const onlyOneLeft = activePlayers.length <= 1;
   if (roundOver || onlyOneLeft) {
     const pots = calculatePots(Array.from(room.players.values()));
     room.gameState.pots = pots;
@@ -1397,6 +1504,11 @@ function checkRoundComplete(room) {
     advanceRound(room);
   } else {
     moveToNextPlayer(room);
+    // 下一位若找不到可行动者，避免空转计时器卡死
+    if (!getCurrentPlayer(room)) {
+      beginAllInRunoutFromStreet(room);
+      return;
+    }
     startTurnTimer(room);
   }
   broadcastState(room);
@@ -1515,6 +1627,9 @@ function advanceRound(room) {
 }
 
 function endHand(room) {
+  // 防止全下跑街 / 超时等路径重复结算导致筹码翻倍发放
+  if (room._handSettled) return;
+  room._handSettled = true;
   clearTurnTimer(room);
   clearAllInRunout(room);
   room.gameState.bettingRound = 'showdown';
@@ -1531,7 +1646,18 @@ function endHand(room) {
   const results = [];
   let lastWinners = null; // track previous pot's winners so orphan pots fall back to them
   pots.forEach(pot => {
-    if (pot.eligible.length === 0) return;
+    if (!pot.amount) return;
+    // 无资格玩家的池：优先退回贡献者，避免筹码蒸发
+    if (!pot.eligible || pot.eligible.length === 0) {
+      const refundIds = pot.refundIds || Array.from(room.players.values())
+        .filter(p => p.totalBet > 0).map(p => p.id);
+      const refundPlayers = refundIds.map(id => room.players.get(id)).filter(Boolean);
+      // 按各自投入退回，禁止均分错账
+      refundPlayers.forEach(c => {
+        c.chips += c.totalBet || 0;
+      });
+      return;
+    }
     const eligiblePlayers = activePlayers.filter(p => pot.eligible.includes(p.id));
     if (eligiblePlayers.length === 0) {
       if (lastWinners && lastWinners.length > 0) {
@@ -1544,7 +1670,7 @@ function endHand(room) {
             playerId: w.player.id,
             playerName: w.player.name,
             amount: amt,
-            hand: 'Uncontested Side Pot'
+            hand: ''
           });
         });
       } else {
@@ -1566,9 +1692,9 @@ function endHand(room) {
         playerId: w.id,
         playerName: w.name,
         amount: pot.amount,
-        hand: 'Win by Fold'
+        hand: ''
       });
-      lastWinners = [{ player: w, hand: { name: 'Win by Fold' } }];
+      lastWinners = [{ player: w, hand: { name: '' } }];
       return;
     }
     const evaluated = eligiblePlayers.map(p => ({
@@ -1678,13 +1804,15 @@ function endHand(room) {
   applyIdleAndSitOutRules(room);
   if (!rooms.has(room.id)) return;
 
-  // 本手结束后：仍离线的玩家移入暂离；主动离座的下轮坐出
+  // 本手结束后：仅「不预期重连 / 主动离座」移入 away；短断线保留占座以便下一手续打
   for (const [sid, p] of [...room.players.entries()]) {
     if (p.disconnected && p.userId) {
-      if (p.sitOutAfterHand) p.isSittingOut = true;
-      room.rebuyRequests.delete(sid);
-      room.players.delete(sid);
-      room.awayPlayers.set(p.userId, p);
+      if (p.sitOutAfterHand || !p.expectReconnect) {
+        if (p.sitOutAfterHand) p.isSittingOut = true;
+        room.rebuyRequests.delete(sid);
+        room.players.delete(sid);
+        room.awayPlayers.set(p.userId, p);
+      }
     }
   }
   // 本手结束后稍作停顿，方便看清公共牌与结算，再开下一手
@@ -1697,7 +1825,8 @@ const AUTO_NEXT_HAND_MS = 6500;
 function countPotentialNextHandPlayers(room) {
   let n = 0;
   room.players.forEach(p => {
-    if (p.hasRebought || (!p.isSittingOut && p.chips > 0)) n++;
+    if (p.chips <= 0) return;
+    if (p.hasRebought || p.pendingJoin || !p.isSittingOut) n++;
   });
   n += room.joinQueue.length;
   return n;
@@ -1745,12 +1874,6 @@ function scheduleNextHand(room, delayMs = AUTO_NEXT_HAND_MS) {
     if (room.gameState.bettingRound !== 'showdown') return;
 
     processJoinQueue(room);
-    Array.from(room.players.values()).forEach(p => {
-      if (p.hasRebought) {
-        p.isSittingOut = false;
-        p.hasRebought = false;
-      }
-    });
     startHand(room);
     broadcastState(room);
   };
@@ -1881,8 +2004,16 @@ io.on('connection', (socket) => {
     const seatIndex = Array.from({ length: room.settings.maxPlayers }, (_, i) => i)
       .find(i => !occupied.some(p => p.seatIndex === i));
     const player = new Player(socket.id, fresh.nickname, buyIn, seatIndex, fresh.id);
-    if (room.gameState.status === 'playing') {
+    // 下注进行中：本手不发牌，下一手自动入局；摊牌间隙/等待中则直接可打下一手
+    const inBetting = room.gameState.status === 'playing'
+      && room.gameState.bettingRound !== 'showdown';
+    if (inBetting) {
       player.isSittingOut = true;
+      player.pendingJoin = true;
+      player.folded = true;
+      socket.emit('join-pending-next-hand', {
+        message: '已入座，本手不发牌，下一手自动入局'
+      });
     }
     room.players.set(socket.id, player);
     socket.join(room.id);
@@ -1893,6 +2024,11 @@ io.on('connection', (socket) => {
     socket.emit('joined-room', room.getPublicState(socket.id));
     socket.emit('wallet-update', { chips: db.getUserById(fresh.id).chips });
     broadcastState(room);
+    // 若正好在摊牌等待下一手，确保会被算进下一手人数
+    if (!inBetting && room.gameState.status === 'playing'
+      && room.gameState.bettingRound === 'showdown') {
+      tryResumeHandIfNeeded(room);
+    }
   });
 
   socket.on('get-hand-history', (data) => {
@@ -2025,13 +2161,10 @@ io.on('connection', (socket) => {
   socket.on('start-game', () => {
     const room = Array.from(rooms.values()).find(r => r.players.has(socket.id) || r.spectators.has(socket.id));
     if (!room || !isHostUser(room, user.id)) return;
+    if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
+      return socket.emit('error-msg', '牌局进行中，不能重新开局');
+    }
     processJoinQueue(room);
-    Array.from(room.players.values()).forEach(p => {
-      if (p.hasRebought) {
-        p.isSittingOut = false;
-        p.hasRebought = false;
-      }
-    });
     startGame(room);
     broadcastState(room);
   });
@@ -2040,17 +2173,14 @@ io.on('connection', (socket) => {
     const room = Array.from(rooms.values()).find(r => r.players.has(socket.id) || r.spectators.has(socket.id));
     if (!room || !isHostUser(room, user.id)) return;
     if (room.gameState.status !== 'playing') return;
+    if (room.gameState.bettingRound !== 'showdown') {
+      return socket.emit('error-msg', '本手尚未结束，不能开下一手');
+    }
     if (room._nextHandTimer) {
       clearTimeout(room._nextHandTimer);
       room._nextHandTimer = null;
     }
     processJoinQueue(room);
-    Array.from(room.players.values()).forEach(p => {
-      if (p.hasRebought) {
-        p.isSittingOut = false;
-        p.hasRebought = false;
-      }
-    });
     startHand(room);
     broadcastState(room);
   });
@@ -2307,32 +2437,34 @@ io.on('connection', (socket) => {
     const room = Array.from(rooms.values()).find(r => isHostUser(r, user.id));
     if (!room) return;
     if (data.type === 'kick') {
-      // Kick a player — they become a spectator (NOT removed from game)
       const target = room.players.get(data.playerId);
       if (target) {
-        // If it's their turn, fold first so the game doesn't stall
-        if (room.gameState.currentPlayerIndex === target.seatIndex && room.gameState.status === 'playing') {
-          processAction(data.playerId, 'fold', 0);
-        }
-        io.to(data.playerId).emit('kicked', { toSpectator: true });
-        io.to(data.playerId).emit('set-spectator', true);
-        target.isSittingOut = true;
-        target.folded = true;
-        room.spectators.add(data.playerId);
-        room.spectatorNames.set(data.playerId, target.name);
-        room.rebuyRequests.delete(data.playerId);
-        room.players.delete(data.playerId);
-        // If kicked player was host, transfer host to an active player first
-        if (target.userId && target.userId === room.hostUserId) {
-          const remaining = Array.from(room.players.values());
-          const activeHost = remaining.find(p => !p.isSittingOut && p.chips > 0);
-          const next = activeHost || remaining[0];
-          if (next) {
-            room.hostId = next.id;
-            room.hostUserId = next.userId || room.hostUserId;
+        const inBetting = room.gameState.status === 'playing'
+          && room.gameState.bettingRound !== 'showdown';
+        if (inBetting) {
+          // 局中踢人：本手保留在 players 以保住死码，结束后再离座结算
+          const wasCurrent = room.gameState.currentPlayerIndex === target.seatIndex && !target.folded;
+          if (wasCurrent) {
+            processAction(data.playerId, 'fold', 0);
+          } else if (!target.folded) {
+            target.folded = true;
+            target.hasActed = true;
+            logHandAction(room, target, 'fold', { amount: 0 });
+            const stillIn = Array.from(room.players.values()).filter(p => !p.folded && !p.isSittingOut);
+            if (stillIn.length <= 1) endHand(room);
+            else if (!getCurrentPlayer(room)) {
+              moveToNextPlayer(room);
+              startTurnTimer(room);
+            }
           }
+          target.wantLeaveSeat = true;
+          target.isSittingOut = true;
+          io.to(data.playerId).emit('kicked', { toSpectator: true, afterHand: true });
+          broadcastState(room);
+        } else {
+          forceLeaveSeat(room, data.playerId, 'kick');
+          if (rooms.has(room.id)) broadcastState(room);
         }
-        broadcastState(room);
       } else if (room.spectators.has(data.playerId)) {
         // Kick a spectator — they're removed entirely
         io.to(data.playerId).emit('kicked', { toSpectator: false });
