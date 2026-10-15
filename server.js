@@ -986,14 +986,20 @@ function processJoinQueue(room) {
   }
 }
 
+function hasDealtHoleCards(room) {
+  return Array.from(room.players.values()).some(p => (p.holeCards || []).length > 0);
+}
+
 function startGame(room) {
   activateSeatedForLobby(room);
-  // 仅允许从等待开局；禁止下注中重入导致吞池
-  if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
+  if (countPotentialNextHandPlayers(room) < 2) return;
+  // 真正在下注中且已发牌：禁止重开。等待开局 / 摊牌间隙 / 卡死无牌均可开局。
+  if (room.gameState.status === 'playing'
+    && room.gameState.bettingRound !== 'showdown'
+    && !room._handSettled
+    && hasDealtHoleCards(room)) {
     return;
   }
-  if (countPotentialNextHandPlayers(room) < 2) return;
-  room.gameState.status = 'playing';
   // 首手由 startHand 选最小座位为庄，此处不预置再 +1
   if (room.gameState.dealerIndex === -1 ||
       !Array.from(room.players.values()).some(p => p.seatIndex === room.gameState.dealerIndex && p.chips > 0 && !p.isSittingOut)) {
@@ -1023,10 +1029,13 @@ function beginAllInRunoutFromStreet(room) {
 }
 
 function startHand(room) {
-  // 下注进行中禁止重开一手（否则 totalBet 被清零 → 池内筹码蒸发）
+  // 仅拦截「已发牌且未结算」的中途重开。
+  // 注意：新房间默认 bettingRound=preflop；若 startGame 先把 status 设为 playing，
+  // 旧逻辑会误判为首手「中途重开」→ 不发牌、也看不到手牌。
   if (room.gameState.status === 'playing'
     && ['preflop', 'flop', 'turn', 'river'].includes(room.gameState.bettingRound)
-    && !room._handSettled) {
+    && !room._handSettled
+    && hasDealtHoleCards(room)) {
     console.warn(`[startHand] blocked mid-hand restart in room ${room.id} (${room.gameState.bettingRound})`);
     return;
   }
@@ -1036,6 +1045,7 @@ function startHand(room) {
   room._handSettled = false;
   clearAllInRunout(room);
   clearTurnTimer(room);
+  room.gameState.status = 'playing';
   room.gameState.deck = createDeck();
   shuffleDeck(room.gameState.deck);
   room.gameState.communityCards = [];
