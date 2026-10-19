@@ -391,8 +391,15 @@ input[type="checkbox"] { width: auto; }
   background: linear-gradient(180deg, rgba(0,0,0,0.55), transparent);
   z-index: 20;
   flex-shrink: 0;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
+}
+.top-leading,
+.top-trailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .room-info {
   font-size: 0.82rem;
@@ -403,13 +410,26 @@ input[type="checkbox"] { width: auto; }
   min-width: 0;
   flex: 1;
   overflow: hidden;
+  justify-content: center;
 }
 .room-info span { white-space: nowrap; }
 @media (max-width: 520px) {
   #host-display { display: none; }
   .room-info .btn-chip { padding: 5px 8px; }
+  .room-info { justify-content: flex-start; }
 }
 .top-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+.btn-icon-chip {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px !important;
+  font-size: 1rem;
+}
 .btn-chip {
   padding: 6px 10px;
   font-size: 0.78rem;
@@ -447,7 +467,8 @@ input[type="checkbox"] { width: auto; }
   display: none;
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
+  left: 0;
+  right: auto;
   min-width: 168px;
   padding: 6px;
   background: rgba(12, 16, 14, 0.96);

@@ -1480,46 +1480,45 @@ const POKERNOW_SEAT_LAYOUTS = {
  * relIndex 0 = 自己（底边，实际由 hero 展示）。
  */
 const POKERNOW_MOBILE_SEAT_LAYOUTS = {
-  2: [[0.50, 0.93], [0.50, 0.08]],
-  3: [[0.50, 0.93], [0.0, 0.48], [1.0, 0.48]],
-  4: [[0.50, 0.93], [0.0, 0.55], [0.50, 0.08], [1.0, 0.55]],
-  5: [[0.50, 0.93], [0.0, 0.68], [0.0, 0.30], [1.0, 0.30], [1.0, 0.68]],
+  // 座位锚在毡缘内侧一点（贴边），中间留公共牌通道
+  2: [[0.50, 0.92], [0.50, 0.08]],
+  3: [[0.50, 0.92], [0.06, 0.48], [0.94, 0.48]],
+  4: [[0.50, 0.92], [0.06, 0.55], [0.50, 0.08], [0.94, 0.55]],
+  5: [[0.50, 0.92], [0.06, 0.68], [0.06, 0.30], [0.94, 0.30], [0.94, 0.68]],
   6: [
-    [0.50, 0.93], [0.0, 0.70], [0.0, 0.36],
-    [0.50, 0.08], [1.0, 0.36], [1.0, 0.70]
+    [0.50, 0.92], [0.06, 0.70], [0.06, 0.36],
+    [0.50, 0.08], [0.94, 0.36], [0.94, 0.70]
   ],
   7: [
-    [0.50, 0.93], [0.0, 0.74], [0.0, 0.50], [0.0, 0.26],
-    [0.50, 0.08], [1.0, 0.38], [1.0, 0.70]
+    [0.50, 0.92], [0.06, 0.74], [0.06, 0.50], [0.06, 0.26],
+    [0.50, 0.08], [0.94, 0.38], [0.94, 0.70]
   ],
   8: [
-    [0.50, 0.93], [0.0, 0.76], [0.0, 0.54], [0.0, 0.30],
-    [0.50, 0.08], [1.0, 0.30], [1.0, 0.54], [1.0, 0.76]
+    [0.50, 0.92], [0.06, 0.76], [0.06, 0.54], [0.06, 0.30],
+    [0.50, 0.08], [0.94, 0.30], [0.94, 0.54], [0.94, 0.76]
   ],
   9: [
-    // 底1 + 左3 + 顶1 + 右3
-    [0.50, 0.93],
-    [0.0, 0.78],
-    [0.0, 0.54],
-    [0.0, 0.30],
+    [0.50, 0.92],
+    [0.06, 0.78],
+    [0.06, 0.54],
+    [0.06, 0.30],
     [0.50, 0.08],
-    [1.0, 0.30],
-    [1.0, 0.50],
-    [1.0, 0.70],
-    [1.0, 0.86]
+    [0.94, 0.30],
+    [0.94, 0.50],
+    [0.94, 0.70],
+    [0.94, 0.86]
   ],
   10: [
-    // 底1 + 左4 + 顶1 + 右4
-    [0.50, 0.93],
-    [0.0, 0.82],
-    [0.0, 0.64],
-    [0.0, 0.42],
-    [0.0, 0.24],
+    [0.50, 0.92],
+    [0.06, 0.82],
+    [0.06, 0.64],
+    [0.06, 0.42],
+    [0.06, 0.24],
     [0.50, 0.08],
-    [1.0, 0.24],
-    [1.0, 0.42],
-    [1.0, 0.64],
-    [1.0, 0.82]
+    [0.94, 0.24],
+    [0.94, 0.42],
+    [0.94, 0.64],
+    [0.94, 0.82]
   ]
 };
 
@@ -1534,10 +1533,10 @@ function seatPointFromPokernow(relIndex, maxPlayers, w, h, isMobile = false) {
   const len = Math.hypot(nx, ny) || 1;
   nx /= len;
   ny /= len;
-  // 轻微外推即可；过大易把座位/按钮挤歪、叠出可视区
+  // 手机贴毡缘；PC 略外挂。过大易挤歪按钮
   const rimOut = isMobile
-    ? Math.min(w, h) * (relIndex === 0 ? 0 : 0.03)
-    : Math.min(w, h) * (relIndex === 0 ? 0 : 0.06);
+    ? Math.min(w, h) * (relIndex === 0 ? 0 : 0.012)
+    : Math.min(w, h) * (relIndex === 0 ? 0 : 0.05);
   const x = fx * w + nx * rimOut;
   const y = fy * h + ny * rimOut;
   return { x, y, nx, ny };
@@ -1723,7 +1722,7 @@ function renderTable() {
   // 座位锚在桌外缘；半宽用于居中定位
   const seatHalfW = isMobileLayout ? 36 : 50;
   const seatHalfH = isMobileLayout ? 22 : 26;
-  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:pn-v6`;
+  const layoutKey = `${Math.round(tableWidth)}x${Math.round(tableHeight)}:${maxPlayers}:${anchorSeat}:${isMobileLayout ? 1 : 0}:pn-v7`;
   const layoutChanged = seatsContainer.dataset.layoutKey !== layoutKey;
   if (layoutChanged) {
     seatsContainer.dataset.layoutKey = layoutKey;
@@ -1853,10 +1852,24 @@ function renderTable() {
   updateCommunityCardsDom();
   const totalPot = getTotalPot();
   const potDiv = document.getElementById('pot-display');
+  // 桌心胶囊只显示数字（对齐常见桌面习惯）；空闲等待时隐藏
   const potText = totalPot > 0 || currentRoom.gameState.status === 'playing'
-    ? `底池 ${formatChips(totalPot)}`
+    ? formatChips(totalPot)
     : '';
-  if (potDiv.textContent !== potText) potDiv.textContent = potText;
+  if (potDiv && potDiv.textContent !== potText) potDiv.textContent = potText;
+
+  // 桌内右上：房主 + 盲注
+  const ownerEl = document.getElementById('table-owner');
+  const blindsEl = document.getElementById('table-blinds');
+  const hostName = currentRoom.players.find(p => p.isHost)?.name
+    || currentRoom.players.find(p => p.id === currentRoom.hostId)?.name
+    || '';
+  const sb = currentRoom.settings?.smallBlind ?? 1;
+  const bb = currentRoom.settings?.bigBlind ?? 2;
+  const ownerText = hostName ? `OWNER: ${hostName}` : '';
+  const blindsText = `NLH · ${sb} / ${bb}`;
+  if (ownerEl && ownerEl.textContent !== ownerText) ownerEl.textContent = ownerText;
+  if (blindsEl && blindsEl.textContent !== blindsText) blindsEl.textContent = blindsText;
 
   // 自己的大牌（底部 hero）+ 筹码 + 当前牌型 + 秀牌栏
   const me = currentRoom.players.find(p => p.id === mySocketId);
@@ -2773,6 +2786,12 @@ function toggleSound() {
   if (label) label.textContent = soundEnabled ? '🔊 音效' : '🔇 音效（关）';
   const btn = document.getElementById('sound-btn');
   if (btn) btn.style.opacity = soundEnabled ? '1' : '0.65';
+  const topBtn = document.getElementById('btn-sound-top');
+  if (topBtn) {
+    topBtn.textContent = soundEnabled ? '🔊' : '🔇';
+    topBtn.style.opacity = soundEnabled ? '1' : '0.65';
+    topBtn.setAttribute('aria-pressed', soundEnabled ? 'false' : 'true');
+  }
 }
 
 function toggleChat() {

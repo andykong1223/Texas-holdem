@@ -107,22 +107,58 @@
   z-index: 1;
 }
 
+/* 桌面右上：房主 / 盲注（自研文案，无第三方商标） */
+#screen-game .table-game-infos {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  pointer-events: none;
+  max-width: 46%;
+}
+#screen-game .table-owner,
+#screen-game .table-blinds {
+  color: rgba(255,255,255,0.78);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+#screen-game .table-blinds {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 #screen-game #board-center {
-  top: 40%;
+  top: 34%;
   z-index: 20;
-  gap: 10px;
+  gap: 8px;
   width: min(70%, 420px);
   pointer-events: none;
+  align-items: center;
 }
 #screen-game #pot-display {
-  background: #2a2a2a;
+  background: rgba(24, 24, 24, 0.88);
   border: 1px solid #3a3a3a;
   color: #fff;
   font-size: 0.95rem;
-  padding: 6px 18px;
+  font-weight: 800;
+  min-width: 3.2rem;
+  padding: 5px 16px;
   border-radius: 999px;
   text-shadow: none;
+  text-align: center;
 }
+#screen-game #pot-display:empty { display: none; }
 #screen-game #community-cards {
   min-height: 64px;
   gap: 6px;
@@ -442,15 +478,16 @@
 }
 #screen-game .hero-tool-btn {
   position: relative;
-  min-width: 52px;
-  padding: 8px 10px;
+  min-width: 54px;
+  min-height: 40px;
+  padding: 9px 10px;
   border: 1px solid #444;
   border-radius: 4px;
   background: #2a2a2a;
   color: #eee;
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: pointer;
   font-family: inherit;
@@ -1103,9 +1140,26 @@
 
 /* ========== 手机：竖向跑道桌（PokerNow：座位贴边 + 中间留道） ========== */
 @media (max-width: 900px) {
+  #screen-game #top-bar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  #screen-game #top-bar .top-menu-trigger {
+    min-width: 44px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+  }
+  #screen-game #top-bar .btn-icon-chip {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    border-radius: 6px !important;
+  }
   #screen-game #table-stage {
     /* 座位贴毡缘，适度留白即可 */
-    padding: 52px 28px 128px;
+    padding: 56px 22px 132px;
     align-items: center;
     justify-content: center;
     overflow: visible;
@@ -1113,12 +1167,12 @@
 
   /* 竖向胶囊桌：略加宽，中间通道够放 5 张公共牌 */
   #screen-game #poker-table {
-    --table-w: min(78vw, 320px);
-    --table-h: min(64dvh, 520px, calc(100dvh - 200px));
+    --table-w: min(80vw, 330px);
+    --table-h: min(66dvh, 540px, calc(100dvh - 190px));
     width: var(--table-w);
     height: var(--table-h);
     border-radius: 9999px;
-    border-width: 9px;
+    border-width: 10px;
     overflow: visible;
   }
   #screen-game #seats-container {
@@ -1144,9 +1198,17 @@
     z-index: 1;
   }
 
-  /* 公共牌区抬高层级，保证不被侧座挡住 */
+  #screen-game .table-game-infos {
+    top: 8px;
+    right: 10px;
+    max-width: 52%;
+  }
+  #screen-game .table-owner { font-size: 0.58rem; }
+  #screen-game .table-blinds { font-size: 0.55rem; }
+
+  /* 公共牌区抬高层级，保证不被侧座挡住；底池偏上 */
   #screen-game #board-center {
-    top: 40%;
+    top: 32%;
     gap: 6px;
     z-index: 20;
     width: min(92%, 220px);
@@ -1164,8 +1226,9 @@
   #screen-game #community-cards .card-rank { font-size: 1.05rem; }
   #screen-game #community-cards .card-suit-center { font-size: 0.95rem; }
   #screen-game #pot-display {
-    font-size: 0.78rem;
-    padding: 4px 12px;
+    font-size: 0.85rem;
+    min-width: 2.6rem;
+    padding: 4px 14px;
     z-index: 21;
   }
 

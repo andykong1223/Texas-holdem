@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>德州大厅</title>
-  <link rel="stylesheet" href="style.css?v=20261015e">
-  <link rel="stylesheet" href="lobby.css?v=20261015e">
-  <link rel="stylesheet" href="game-table.css?v=20261015e">
+  <link rel="stylesheet" href="style.css?v=20261019a">
+  <link rel="stylesheet" href="lobby.css?v=20261019a">
+  <link rel="stylesheet" href="game-table.css?v=20261019a">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -265,13 +265,7 @@
       <div id="table-container">
         <div id="seat-bubbles" aria-hidden="true"></div>
         <div id="top-bar">
-          <div class="room-info">
-            <span id="room-code-display"></span>
-            <span id="session-clock" class="session-clock" title="剩余牌局时间"></span>
-            <button class="btn btn-chip" onclick="copyCode()" title="复制邀请链接">邀请</button>
-            <span id="host-display"></span>
-          </div>
-          <div class="top-actions">
+          <div class="top-leading">
             <div class="top-menu" id="top-menu">
               <button type="button" class="btn btn-chip top-menu-trigger" id="top-menu-btn" onclick="toggleTopMenu(event)" title="菜单" aria-haspopup="true" aria-expanded="false">
                 OPTIONS
@@ -306,11 +300,24 @@
               </div>
             </div>
           </div>
+          <div class="room-info">
+            <span id="room-code-display"></span>
+            <span id="session-clock" class="session-clock" title="剩余牌局时间"></span>
+            <button class="btn btn-chip" onclick="copyCode()" title="复制邀请链接">邀请</button>
+            <span id="host-display"></span>
+          </div>
+          <div class="top-trailing">
+            <button type="button" class="btn btn-chip btn-icon-chip" id="btn-sound-top" onclick="toggleSound()" title="音效开关" aria-label="音效">🔊</button>
+          </div>
         </div>
 
         <div id="table-stage">
           <div id="poker-table">
             <div class="felt-inner"></div>
+            <div id="table-game-infos" class="table-game-infos">
+              <div id="table-owner" class="table-owner"></div>
+              <div id="table-blinds" class="table-blinds"></div>
+            </div>
             <div id="win-banner" class="win-banner"></div>
             <div id="start-overlay" class="start-overlay">
               <button class="btn btn-start" id="btn-start-game" onclick="startGame()">开始游戏</button>
@@ -593,8 +600,8 @@
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="js/api-client.js?v=20261015e"></script>
-  <script src="client.js?v=20261015e"></script>
-  <script src="js/lobby-app.js?v=20261015e"></script>
+  <script src="js/api-client.js?v=20261019a"></script>
+  <script src="client.js?v=20261019a"></script>
+  <script src="js/lobby-app.js?v=20261019a"></script>
 </body>
 </html>
