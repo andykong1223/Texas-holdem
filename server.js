@@ -1475,6 +1475,8 @@ function applyPlayerRebuy(room, player, amount) {
   player.chips = (player.chips || 0) + amount;
   player.hasRebought = true;
   player.isSittingOut = false;
+  player.wantSitOut = false;
+  player.folded = false;
   return { ok: true, wallet: db.getUserById(fresh.id).chips };
 }
 
@@ -1967,8 +1969,10 @@ function countPotentialNextHandPlayers(room) {
   reviveAwayPlayersForHand(room);
   let n = 0;
   room.players.forEach(p => {
-    if ((p.chips || 0) <= 0) return;
-    if (p.wantSitOut && p.isSittingOut && !p.pendingJoin && !p.hasRebought) return;
+    // 桌上筹码 + 已买入待入账，避免「输光后已补码」被当成 0 人
+    const stack = (p.chips || 0) + (p.pendingRebuy || 0);
+    if (stack <= 0) return;
+    if (p.wantSitOut && p.isSittingOut && !p.pendingJoin && !p.hasRebought && !(p.pendingRebuy > 0)) return;
     if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0 || !p.isSittingOut || p.disconnected) {
       n++;
     }
@@ -2414,6 +2418,8 @@ io.on('connection', (socket) => {
       socket.emit('rebuy-result', { approved: true, amount });
       socket.emit('wallet-update', { chips: result.wallet });
       broadcastState(room);
+      // 等待中补码：人数够则立刻续开（否则只提示「即将开局」却永远不开）
+      if (!result.pending) tryResumeHandIfNeeded(room);
       return;
     }
     const fresh = player.userId ? db.getUserById(player.userId) : null;
@@ -2444,6 +2450,7 @@ io.on('connection', (socket) => {
     socket.emit('rebuy-result', { approved: true, amount });
     socket.emit('wallet-update', { chips: result.wallet });
     broadcastState(room);
+    if (!result.pending) tryResumeHandIfNeeded(room);
   });
 
   socket.on('approve-rebuy', (data) => {
@@ -2462,10 +2469,15 @@ io.on('connection', (socket) => {
       player.sessionBuyIn = (player.sessionBuyIn || 0) + amount;
       player.hasRebought = true;
       player.isSittingOut = false;
+      player.wantSitOut = false;
+      player.folded = false;
     }
     room.rebuyRequests.delete(data.playerId);
     io.to(data.playerId).emit('rebuy-result', { approved: true, amount });
     broadcastState(room);
+    if (room.gameState.status !== 'playing' || room.gameState.bettingRound === 'showdown') {
+      tryResumeHandIfNeeded(room);
+    }
   });
 
   socket.on('decline-rebuy', (data) => {
@@ -2735,6 +2747,14 @@ setInterval(() => {
             console.error('watchdog endHand failed:', err);
           }
         }
+      }
+      continue;
+    }
+
+    // 已开过局、停在等待、人数已够：补码后漏触发时由看门狗续开
+    if (room.gameState.status === 'waiting' && room.sessionStartedAt > 0 && !room.pendingSettle) {
+      if (countPotentialNextHandPlayers(room) >= 2) {
+        tryResumeHandIfNeeded(room);
       }
       continue;
     }
