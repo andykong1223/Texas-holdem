@@ -148,12 +148,71 @@ function settleSession(room, reason = 'ended') {
   console.log(`Session settled (${reason}): ${room.id}`);
 }
 
+function isMidHandBetting(room) {
+  return !!room
+    && room.gameState.status === 'playing'
+    && room.gameState.bettingRound !== 'showdown';
+}
+
+/** 真正连着 socket 的在座人数（不含 offline: 占座） */
+function countConnectedSeated(room) {
+  let n = 0;
+  for (const sid of room.players.keys()) {
+    if (String(sid).startsWith('offline:')) continue;
+    if (io.of('/').sockets.get(sid)) n++;
+  }
+  return n;
+}
+
+/**
+ * 强制收摊本手（若在下注中）并结算散场。
+ * 解决：pendingSettle 永远等不到摊牌、关计时器断线卡死、幽灵房占住账号。
+ */
+function forceSettleRoom(room, reason = 'ended') {
+  if (!room || room._settling || !rooms.has(room.id)) return false;
+  room.pendingSettle = true;
+  room.pendingSettleReason = reason;
+  clearTurnTimer(room);
+  if (room._sessionTimer) {
+    clearTimeout(room._sessionTimer);
+    room._sessionTimer = null;
+  }
+
+  if (isMidHandBetting(room) && !room._handSettled) {
+    try {
+      // endHand → scheduleNextHand 见 pendingSettle 会立刻 settleSession
+      endHand(room);
+    } catch (err) {
+      console.error('forceSettleRoom endHand failed:', err);
+      if (rooms.has(room.id) && !room._settling) settleSession(room, reason);
+    }
+    return true;
+  }
+
+  if (room._nextHandTimer) {
+    clearTimeout(room._nextHandTimer);
+    room._nextHandTimer = null;
+  }
+  settleSession(room, reason);
+  return true;
+}
+
+/** 无人在线的卡死/待结算/空等房间：可回收，解除 create-room 占位 */
+function isReclaimableZombieRoom(room) {
+  if (!room || room._settling) return false;
+  if (countConnectedSeated(room) > 0) return false;
+  if (room.pendingSettle) return true;
+  if (isMidHandBetting(room)) return true;
+  // 等待/摊牌间隙且全员离线：也回收，否则 forever 占 findRoomByUserId
+  return true;
+}
+
 function destroyRoom(room) {
   if (!room) return;
   if (room._settling) return;
   // 有时限牌局走结算；无在座/暂离玩家时才销毁
   if (room.players.size + room.awayPlayers.size > 0) {
-    settleSession(room, 'ended');
+    forceSettleRoom(room, 'ended');
     return;
   }
   clearTurnTimer(room);
@@ -329,11 +388,27 @@ function restoreRoomsFromDisk() {
       // 牌局进行中：给玩家重连宽限期，避免立刻因离线被计时弃牌
       if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
         room.gameState.timerEnd = 0;
+        // 已标记结算：缩短宽限，无人回连则强制收摊，避免「结束不了 / 建不了房」
+        const graceMs = room.pendingSettle ? 15000 : 90000;
         setTimeout(() => {
           if (!rooms.has(room.id) || room._settling) return;
+          if (room.pendingSettle && countConnectedSeated(room) === 0) {
+            forceSettleRoom(room, room.pendingSettleReason || 'timeout');
+            return;
+          }
           const cur = getCurrentPlayer(room);
-          if (cur) startTurnTimer(room);
-        }, 90000);
+          if (cur) {
+            startTurnTimer(room);
+          } else if (!room._handSettled) {
+            try { endHand(room); } catch (err) {
+              console.error('restore rescue endHand failed:', err);
+            }
+          }
+        }, graceMs);
+      } else if (room.pendingSettle) {
+        // 已在摊牌/等待却挂着 pendingSettle：直接结算
+        settleSession(room, room.pendingSettleReason || 'timeout');
+        continue;
       }
 
       console.log(`Restored room ${room.id} (${room.players.size} players, hand #${room.gameState.handNumber || 0})`);
@@ -1329,9 +1404,14 @@ function startTurnTimer(room) {
   const player = getCurrentPlayer(room);
   if (!player) return;
   player.hadDecisionThisHand = true;
+  const offline = !!player.disconnected || String(player.id).startsWith('offline:');
   if (!room.settings.timerEnabled) {
     room.gameState.timerEnd = 0;
     emitTurnTimer(room, player);
+    // 关行动计时时离线玩家无法点按钮 → 短延迟代打，避免整局永久卡死
+    if (offline) {
+      room.turnTimer = setTimeout(() => autoActOnTimeout(room), 3000);
+    }
     return;
   }
   const ms = room.settings.timerSeconds * 1000;
@@ -1968,9 +2048,16 @@ io.on('connection', (socket) => {
   socket.on('create-room', (data) => {
     const fresh = db.getUserById(user.id);
     if (!fresh || fresh.status === 'banned') return socket.emit('error-msg', '账号无效');
-    if (findRoomByUserId(fresh.id)) {
-      if (tryAutoRejoin(socket, fresh)) return;
-      return socket.emit('error-msg', '你已在其他牌局中，请先回到原房间或等待结算');
+    const existingRoom = findRoomByUserId(fresh.id);
+    if (existingRoom) {
+      if (isReclaimableZombieRoom(existingRoom)) {
+        console.log(`Reclaiming zombie room ${existingRoom.id} for create-room by ${fresh.username}`);
+        forceSettleRoom(existingRoom, existingRoom.pendingSettleReason || 'ended');
+      } else if (tryAutoRejoin(socket, fresh)) {
+        return;
+      } else {
+        return socket.emit('error-msg', '你已在其他牌局中，请先回到原房间或等待结算');
+      }
     }
     const nickname = fresh.nickname;
     const roomId = generateRoomCode();
@@ -2378,21 +2465,12 @@ io.on('connection', (socket) => {
   socket.on('end-game', () => {
     const room = Array.from(rooms.values()).find(r => isHostUser(r, user.id));
     if (!room) return;
-    // 正在打牌：标记本手结束后结算；否则立即结算
-    if (room.gameState.status === 'playing' && room.gameState.bettingRound !== 'showdown') {
-      room.pendingSettle = true;
-      room.pendingSettleReason = 'host';
-      emitToRoom(room, 'session-ending', {
-        message: '房主结束牌局，本手结束后进入结算',
-        sessionEndsAt: Date.now()
-      });
-      return;
-    }
-    if (room._nextHandTimer) {
-      clearTimeout(room._nextHandTimer);
-      room._nextHandTimer = null;
-    }
-    settleSession(room, 'host');
+    // 立即收摊本手并结算（不再干等卡死的下注轮）
+    emitToRoom(room, 'session-ending', {
+      message: '房主结束牌局，正在结算…',
+      sessionEndsAt: Date.now()
+    });
+    forceSettleRoom(room, 'host');
   });
   
   /** 摊牌阶段秀牌：indexes 为 [0]/[1]/[0,1] 或 'all'；弃牌者手动秀，池内已自动秀 */
@@ -2623,6 +2701,44 @@ setInterval(() => {
     if (room._dirty && !room._settling) persistRoomNow(room);
   }
 }, 2000);
+
+// 僵尸牌局看门狗：全员离线卡死 / pendingSettle 永不摊牌 → 强制结算
+setInterval(() => {
+  for (const room of [...rooms.values()]) {
+    if (!room || room._settling || !rooms.has(room.id)) continue;
+    const connected = countConnectedSeated(room);
+
+    if (room.pendingSettle && isMidHandBetting(room)) {
+      if (connected === 0) {
+        forceSettleRoom(room, room.pendingSettleReason || 'timeout');
+        continue;
+      }
+      if (!room.turnTimer) {
+        const cur = getCurrentPlayer(room);
+        if (cur) startTurnTimer(room);
+        else if (!room._handSettled) {
+          try { endHand(room); } catch (err) {
+            console.error('watchdog endHand failed:', err);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (connected === 0 && isMidHandBetting(room)) {
+      room._zombieSince = room._zombieSince || Date.now();
+      if (Date.now() - room._zombieSince > 120000) {
+        console.log(`Watchdog force-settling zombie room ${room.id}`);
+        forceSettleRoom(room, room.pendingSettleReason || 'ended');
+      } else if (!room.turnTimer) {
+        const cur = getCurrentPlayer(room);
+        if (cur) startTurnTimer(room);
+      }
+    } else {
+      room._zombieSince = 0;
+    }
+  }
+}, 20000);
 
 restoreRoomsFromDisk();
 
