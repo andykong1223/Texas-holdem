@@ -513,7 +513,10 @@ socket.on('error-msg', (msg) => showToast(msg, 3200, 'error'));
 socket.on('state-update', (state) => {
   currentRoom = state;
   renderTable();
-  if (state.sessionEndsAt) startSessionClockUI(state.sessionEndsAt);
+  // 开局后 sessionEndsAt 才有值；不限时则 sessionStartedAt > 0 且 endsAt=0
+  if (state.sessionEndsAt || state.sessionStartedAt) {
+    startSessionClockUI(state.sessionEndsAt || 0);
+  }
   // Update host display in top bar (in case host changed due to disconnect)
   const hostPlayer = state.players.find(p => p.isHost);
   document.getElementById('host-display').innerText = `| 房主: ${hostPlayer?.name || '—'}`;
@@ -531,6 +534,7 @@ socket.on('state-update', (state) => {
 socket.on('hand-started', (state) => {
   currentRoom = state;
   renderTable();
+  startSessionClockUI(state.sessionEndsAt || 0);
   playSound('deal');
   document.getElementById('next-hand-overlay').classList.add('hidden');
   nextHandStartAt = 0;
@@ -1887,20 +1891,26 @@ function renderTable() {
   if (currentRoom.gameState.status === 'waiting') {
     startOverlay.classList.remove('hidden');
     nextHandOverlay.classList.add('hidden');
-    if (isHost) {
+    const activePlayers = currentRoom.players.filter(p => {
+      if ((p.chips || 0) <= 0) return false;
+      // 中途入座 / 待补码 / 断线占座都算可开局人数
+      if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0) return true;
+      if (p.disconnected) return true;
+      // 仅主动暂离不算
+      if (p.wantSitOut && p.isSittingOut) return false;
+      return !p.isSittingOut;
+    });
+    const approvedSpectators = (currentRoom.spectators || []).filter(s => s.joinApproved).length;
+    const totalPotential = activePlayers.length + approvedSpectators;
+    const alreadyStarted = !!(currentRoom.sessionStartedAt > 0);
+    if (alreadyStarted) {
+      // 已开过局：人数够会自动发牌，不再要房主点开始
+      startBtn.style.display = 'none';
+      waitingText.style.display = 'block';
+      waitingText.innerText = totalPotential < 2 ? '等待更多玩家入座…' : '人数已够，即将自动开局…';
+    } else if (isHost) {
       startBtn.style.display = 'inline-block';
       waitingText.style.display = 'none';
-      const activePlayers = currentRoom.players.filter(p => {
-        if ((p.chips || 0) <= 0) return false;
-        // 中途入座 / 待补码 / 断线占座都算可开局人数
-        if (p.hasRebought || p.pendingJoin || (p.pendingRebuy || 0) > 0) return true;
-        if (p.disconnected) return true;
-        // 仅主动暂离不算
-        if (p.wantSitOut && p.isSittingOut) return false;
-        return !p.isSittingOut;
-      });
-      const approvedSpectators = (currentRoom.spectators || []).filter(s => s.joinApproved).length;
-      const totalPotential = activePlayers.length + approvedSpectators;
       if (totalPotential < 2) {
         startBtn.disabled = true;
         startBtn.innerText = '至少需要 2 人';
@@ -2460,21 +2470,34 @@ function formatSessionLeft(ms) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function formatSessionDuration(mins) {
+  if (!mins || mins <= 0) return '不限时';
+  if (mins % 60 === 0) return `${mins / 60} 小时`;
+  if (mins > 60) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h} 小时 ${m} 分`;
+  }
+  return `${mins} 分钟`;
+}
+
 function startSessionClockUI(endsAt) {
   const clock = document.getElementById('session-clock');
   if (!clock) return;
   if (sessionClockTimer) { clearInterval(sessionClockTimer); sessionClockTimer = null; }
+  const mins = currentRoom?.settings?.sessionMinutes;
+  const started = !!(currentRoom?.sessionStartedAt > 0);
+  // 尚未开局：只展示设定时长，不倒计时；已开局且不限时：显示不限时
   if (!endsAt) {
-    const mins = currentRoom?.settings?.sessionMinutes;
-    clock.textContent = mins ? '' : '不限时';
+    if (started || !mins) {
+      clock.textContent = '不限时';
+    } else {
+      clock.textContent = `${formatSessionDuration(mins)} · 开局后计时`;
+    }
     clock.className = 'session-clock';
-    if (!mins) return;
+    return;
   }
   const tick = () => {
-    if (!endsAt) {
-      clock.textContent = '';
-      return;
-    }
     const left = endsAt - Date.now();
     if (currentRoom?.pendingSettle || left <= 0) {
       clock.textContent = '即将结算';

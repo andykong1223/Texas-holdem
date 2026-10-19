@@ -505,8 +505,11 @@ function tryResumeHandIfNeeded(room) {
   if (!room || room._settling || room.pendingSettle) return;
   if (countPotentialNextHandPlayers(room) < 2) return;
   if (room.gameState.status === 'waiting') {
-    // 人数已够：清掉误暂离，由房主点「开始」；不强制自动开局
     activateSeatedForLobby(room);
+    // 已开过局：人数够则自动续开，无需房主再点「开始」
+    if (room.sessionStartedAt > 0) {
+      startGame(room);
+    }
     broadcastState(room);
     return;
   }
@@ -569,14 +572,21 @@ function tryAutoRejoin(socket, user) {
   return true;
 }
 
-function startSessionClock(room) {
+/**
+ * 牌局真正开始（首手发牌）时启动会话计时；之后永不重置/暂停。
+ * 建房阶段不调用，避免等人时把时长耗掉。
+ */
+function ensureSessionClock(room) {
+  if (!room) return;
+  // 已开始过：计时器继续走，绝不重开
+  if (room.sessionStartedAt > 0) return;
+  room.sessionStartedAt = Date.now();
   const minutes = parseInt(room.settings.sessionMinutes) || 0;
   if (minutes <= 0) {
     room.sessionEndsAt = 0;
     return;
   }
   const ms = minutes * 60 * 1000;
-  room.sessionStartedAt = Date.now();
   room.sessionEndsAt = room.sessionStartedAt + ms;
   if (room._sessionTimer) clearTimeout(room._sessionTimer);
   room._sessionTimer = setTimeout(() => onSessionTimeout(room), ms);
@@ -1080,6 +1090,8 @@ function startGame(room) {
       !Array.from(room.players.values()).some(p => p.seatIndex === room.gameState.dealerIndex && p.chips > 0 && !p.isSittingOut)) {
     room.gameState.dealerIndex = -1;
   }
+  // 首手开局才开始会话计时；之后一直走，不再停
+  ensureSessionClock(room);
   startHand(room);
 }
 
@@ -2105,7 +2117,7 @@ io.on('connection', (socket) => {
     const player = new Player(socket.id, nickname, settings.startingChips, 0, fresh.id);
     room.players.set(socket.id, player);
     rooms.set(roomId, room);
-    startSessionClock(room);
+    // 会话计时在房主点「开始」首手发牌时启动，建房时不耗时
     socket.join(roomId);
     socket.emit('joined-room', room.getPublicState(socket.id));
     socket.emit('wallet-update', { chips: db.getUserById(fresh.id).chips });
@@ -2363,6 +2375,8 @@ io.on('connection', (socket) => {
       }
       io.to(data.spectatorId).emit('join-status', { status: 'approved' });
       broadcastState(room);
+      // 等待中且已开过局：人数够则自动续开
+      tryResumeHandIfNeeded(room);
     }
   });
 
